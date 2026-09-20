@@ -288,7 +288,9 @@
       m.innerHTML +=
         '<div class="titulo-seccion">Cerradas hoy (' + cerradas.length + ')</div>' +
         '<button class="btn btn--fantasma btn--bloque btn--chico" id="bVerCerradas">' +
-          (vista.verCerradas ? 'Ocultar' : 'Ver las ' + cerradas.length + ' cuentas cerradas hoy') + '</button>' +
+          (vista.verCerradas ? 'Ocultar'
+            : (cerradas.length === 1 ? 'Ver la cuenta cerrada hoy'
+                                     : 'Ver las ' + cerradas.length + ' cuentas cerradas hoy')) + '</button>' +
         (vista.verCerradas ? '<div class="mt">' + cerradas.map(filaCuenta).join('') + '</div>' : '');
     }
 
@@ -319,10 +321,11 @@
     var items = S.itemsDe(c.id);
     var nVasos = items.reduce(function (s, i) { return s + i.cantidad; }, 0);
 
-    var meta = nVasos
-      ? nVasos + (nVasos === 1 ? ' vaso' : ' vasos') + ' · ' + haceRato(c.created_at)
-      : 'Sin pedidos · ' + haceRato(c.created_at);
-    if (pagado > 0 && saldo > 0) meta += ' · abonó ' + S.money(pagado);
+    var meta = nVasos ? plural(nVasos, 'vaso', 'vasos') : 'Sin pedidos';
+    // Si ya abonó, ese dato vale más que la hora: es lo que define cuánto falta.
+    meta += pagado > 0 && saldo > 0
+      ? ' · abonó ' + S.money(pagado)
+      : ' · ' + haceRato(c.created_at);
     if (c.estado === 'cerrada') meta = 'Cerrada ' + hora(c.closed_at) + ' · ' + S.money(total);
 
     return '<button class="cuenta' + (saldo <= 0 ? ' cuenta--saldada' : '') + '" data-cuenta="' + c.id + '">' +
