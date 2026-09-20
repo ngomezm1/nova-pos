@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="es-CO">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>NOVA POS</title>
+<meta name="description" content="Punto de venta de NOVA — granizados, cócteles y micheladas. Medellín.">
+
+<meta name="theme-color" content="#06021a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="NOVA POS">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="icon" href="assets/icon-192.png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;800;900&family=Outfit:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="login">
+  <img src="assets/logo.jpg" alt="NOVA">
+  <h1>NOVA POS</h1>
+  <p class="lema">Cargando…</p>
+</div>
+
+<script src="js/store.js"></script>
+<script src="js/cloud.js"></script>
+<script src="js/ui.js"></script>
+<script>
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js').catch(function () {});
+    });
+  }
+  // Evita el zoom por doble toque al picar rápido en la grilla de productos.
+  var ultimoToque = 0;
+  document.addEventListener('touchend', function (e) {
+    var ahora = Date.now();
+    if (ahora - ultimoToque < 320) e.preventDefault();
+    ultimoToque = ahora;
+  }, { passive: false });
+</script>
+</body>
+</html>
