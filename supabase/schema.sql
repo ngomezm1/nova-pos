@@ -125,21 +125,42 @@ create table if not exists public.pagos (
   deleted     boolean not null default false
 );
 
+-- El vaso plástico es de un solo tipo y no lleva onzas: su fila tiene oz nulo.
+-- Por eso la unicidad se define sobre coalesce(oz, 0) y no sobre oz a secas,
+-- que en Postgres dejaría entrar varios nulos repetidos.
 create table if not exists public.inventario (
   id         uuid primary key default gen_random_uuid(),
   tipo       text not null check (tipo in ('icopor', 'plastico')),
-  oz         int not null,
+  oz         int,
   stock      int not null default 0,
   minimo     int not null default 20,
   updated_at timestamptz not null default now(),
-  deleted    boolean not null default false,
-  unique (tipo, oz)
+  deleted    boolean not null default false
 );
+
+alter table public.inventario alter column oz drop not null;
+alter table public.inventario drop constraint if exists inventario_tipo_oz_key;
+
+-- Los vasos plásticos con tamaño son de una versión anterior: se consolidan
+-- en una sola fila sumando lo que hubiera en cada una.
+do $$
+begin
+  if exists (select 1 from public.inventario where tipo = 'plastico' and oz is not null) then
+    insert into public.inventario (tipo, oz, stock, minimo)
+    select 'plastico', null, sum(stock), min(minimo)
+    from public.inventario where tipo = 'plastico' and oz is not null;
+
+    delete from public.inventario where tipo = 'plastico' and oz is not null;
+  end if;
+end $$;
+
+create unique index if not exists inventario_vaso_uq
+  on public.inventario (tipo, coalesce(oz, 0));
 
 create table if not exists public.movimientos (
   id         uuid primary key default gen_random_uuid(),
   tipo_vaso  text not null,
-  oz         int not null,
+  oz         int,
   delta      int not null,
   motivo     text not null default 'ajuste',
   cuenta_id  uuid,
@@ -149,6 +170,8 @@ create table if not exists public.movimientos (
   updated_at timestamptz not null default now(),
   deleted    boolean not null default false
 );
+
+alter table public.movimientos alter column oz drop not null;
 
 create index if not exists items_cuenta_idx   on public.items (cuenta_id);
 create index if not exists pagos_cuenta_idx   on public.pagos (cuenta_id);
@@ -242,11 +265,13 @@ security definer
 set search_path = public
 as $$
 begin
-  if p_tipo is null or p_oz is null or p_delta = 0 then return; end if;
+  -- p_oz nulo es válido: así es el vaso plástico, que no tiene tamaño.
+  if p_tipo is null or p_delta = 0 then return; end if;
 
   insert into public.inventario (tipo, oz, stock)
   values (p_tipo, p_oz, p_delta)
-  on conflict (tipo, oz) do update set stock = public.inventario.stock + p_delta;
+  on conflict (tipo, coalesce(oz, 0))
+  do update set stock = public.inventario.stock + p_delta;
 
   insert into public.movimientos (tipo_vaso, oz, delta, motivo, cuenta_id, nota)
   values (p_tipo, p_oz, p_delta, p_motivo, p_cuenta, coalesce(p_nota, ''));
@@ -362,23 +387,39 @@ alter table public.movimientos replica identity full;
 
 insert into public.inventario (tipo, oz, stock, minimo) values
   ('icopor', 8, 0, 20), ('icopor', 12, 0, 20), ('icopor', 16, 0, 20), ('icopor', 24, 0, 20),
-  ('plastico', 8, 0, 20), ('plastico', 12, 0, 20), ('plastico', 16, 0, 20), ('plastico', 24, 0, 20)
-on conflict (tipo, oz) do nothing;
+  ('plastico', null, 0, 20)
+on conflict (tipo, coalesce(oz, 0)) do nothing;
 
 -- ================================ catálogo inicial ==========================
--- Micheladas y cócteles quedan en 0: poneles precio desde Ajustes → Productos.
+
+-- Antes del índice hay que limpiar duplicados que hubiera dejado una corrida
+-- anterior; si no, el índice único no se puede crear. Se conserva el más viejo.
+delete from public.productos p
+ where p.deleted = false
+   and exists (
+     select 1 from public.productos q
+      where q.deleted = false
+        and q.nombre = p.nombre
+        and (q.updated_at, q.id) < (p.updated_at, p.id)
+   );
+
+create unique index if not exists productos_nombre_uq
+  on public.productos (nombre) where not deleted;
 
 insert into public.productos (nombre, categoria, oz, precio, vaso, orden) values
-  ('Cremoso 8 oz',    'cremoso',   8,  13000, 'icopor',   1),
-  ('Cremoso 12 oz',   'cremoso',   12, 17000, 'icopor',   2),
-  ('Cremoso 16 oz',   'cremoso',   16, 22000, 'icopor',   3),
-  ('Cremoso 24 oz',   'cremoso',   24, 30000, 'icopor',   4),
-  ('Original 8 oz',   'original',  8,  11000, 'icopor',   5),
-  ('Original 12 oz',  'original',  12, 13000, 'icopor',   6),
-  ('Original 16 oz',  'original',  16, 17000, 'icopor',   7),
-  ('Original 24 oz',  'original',  24, 23000, 'icopor',   8),
-  ('Michelada 16 oz', 'michelada', 16, 0,     'plastico', 9),
-  ('Michelada 24 oz', 'michelada', 24, 0,     'plastico', 10),
-  ('Coctel 12 oz',    'coctel',    12, 0,     'plastico', 11),
-  ('Coctel 16 oz',    'coctel',    16, 0,     'plastico', 12)
-on conflict do nothing;
+  ('Cremoso 8 oz',   'cremoso',   8,    13000, 'icopor',   1),
+  ('Cremoso 12 oz',  'cremoso',   12,   17000, 'icopor',   2),
+  ('Cremoso 16 oz',  'cremoso',   16,   22000, 'icopor',   3),
+  ('Cremoso 24 oz',  'cremoso',   24,   30000, 'icopor',   4),
+  ('Original 8 oz',  'original',  8,    11000, 'icopor',   5),
+  ('Original 12 oz', 'original',  12,   13000, 'icopor',   6),
+  ('Original 16 oz', 'original',  16,   17000, 'icopor',   7),
+  ('Original 24 oz', 'original',  24,   23000, 'icopor',   8),
+  ('Michelada',      'michelada', null, 12000, 'plastico', 9)
+on conflict (nombre) where not deleted do nothing;
+
+-- Restos del catálogo anterior: micheladas con tamaño y cócteles de relleno.
+-- Se ocultan en vez de borrarse, para no romper ventas ya registradas.
+update public.productos
+   set activo = false, deleted = true
+ where nombre in ('Michelada 16 oz', 'Michelada 24 oz', 'Coctel 12 oz', 'Coctel 16 oz');

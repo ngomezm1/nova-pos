@@ -630,10 +630,15 @@ main {
 
 /* ---------------- métodos de pago ---------------- */
 
-.metodos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 4px; }
+.metodos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+  margin-bottom: 4px;
+}
 
 .metodos button {
-  padding: 12px 6px;
+  padding: 15px 6px;
   border-radius: 12px;
   border: 1px solid var(--linea);
   background: var(--panel);
@@ -653,7 +658,7 @@ main {
 
 .atajos button {
   flex: 1;
-  min-width: 78px;
+  min-width: 92px;
   padding: 10px 6px;
   border-radius: 11px;
   border: 1px dashed var(--linea);
@@ -718,6 +723,41 @@ main {
 .metrica .val.ambar { color: var(--ambar); }
 .metrica .val.cyan  { color: var(--cyan); }
 .metrica .nota { font-size: 11px; color: var(--texto-3); margin-top: 3px; }
+
+/* ---------------- actividad en vivo ---------------- */
+
+.vivo {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--lima);
+  box-shadow: 0 0 10px var(--lima);
+  animation: pulso 1.6s ease-in-out infinite;
+}
+
+@keyframes pulso { 50% { opacity: .25; transform: scale(.7); } }
+
+.evento {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(160, 120, 255, .12);
+}
+
+.evento:last-child { border-bottom: 0; }
+.evento__cuerpo { flex: 1; min-width: 0; }
+
+.evento__hora {
+  flex: none;
+  width: 58px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--texto-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.evento--pago .evento__hora { color: var(--lima); }
 
 /* ---------------- barras del resumen ---------------- */
 

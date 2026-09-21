@@ -728,20 +728,24 @@
     if (alertas.length) {
       html += '<div class="aviso aviso--error">⚠ Se está acabando: ' +
         alertas.map(function (i) {
-          return esc(S.NOMBRE_VASO[i.tipo]) + ' ' + i.oz + ' oz (' + (i.stock || 0) + ')';
+          return esc(S.etiquetaVaso(i.tipo, i.oz)) + ' (' + (i.stock || 0) + ')';
         }).join(' · ') + '</div>';
     }
 
     ['icopor', 'plastico'].forEach(function (tipo) {
       var lista = inv.filter(function (i) { return i.tipo === tipo; });
       if (!lista.length) return;
-      html += '<div class="titulo-seccion">Vasos de ' + (tipo === 'icopor' ? 'icopor' : 'plástico') + '</div>' +
+      html += '<div class="titulo-seccion">' +
+        (tipo === 'icopor' ? 'Vasos de icopor' : 'Vaso plástico · micheladas') + '</div>' +
         '<div class="tarjeta">' + lista.map(function (i) {
           var s = i.stock || 0, min = i.minimo || 0;
           var clase = s <= min ? 'bajo' : (s <= min * 2 ? 'medio' : 'ok');
-          var usados = res.vasosUsados[i.tipo + '-' + i.oz] || 0;
+          var uso = res.vasosUsados[S.claveVaso(i.tipo, i.oz)];
+          var usados = uso ? uso.cant : 0;
           return '<div class="stock">' +
-            '<div class="stock__oz">' + i.oz + ' oz</div>' +
+            '<div class="stock__oz">' + (S.normOz(i.oz) === null
+              ? '<span style="font-size:11px;letter-spacing:.5px">ÚNICO</span>'
+              : S.normOz(i.oz) + ' oz') + '</div>' +
             '<div class="stock__cuerpo">' +
               '<div class="stock__cant ' + clase + '">' + s + ' <span style="font-size:12px;font-weight:600;color:var(--texto-3)">en stock</span></div>' +
               '<div class="stock__nota">Alerta bajo ' + min + (usados ? ' · hoy salieron ' + usados : '') + '</div>' +
@@ -757,7 +761,7 @@
       ? '<div class="tarjeta"><ul class="lista-simple">' + movs.slice(0, 40).map(function (mv) {
           var signo = mv.delta > 0 ? '+' : '';
           var color = mv.delta > 0 ? 'var(--lima)' : 'var(--texto-2)';
-          return '<li><span>' + esc(S.NOMBRE_VASO[mv.tipo_vaso] || mv.tipo_vaso) + ' ' + mv.oz + ' oz' +
+          return '<li><span>' + esc(S.etiquetaVaso(mv.tipo_vaso, mv.oz)) +
             '<br><span class="chico">' + esc(mv.motivo) + (mv.nota ? ' · ' + esc(mv.nota) : '') + ' · ' + hora(mv.created_at) + '</span></span>' +
             '<b style="color:' + color + '">' + signo + mv.delta + '</b></li>';
         }).join('') + '</ul></div>'
@@ -771,7 +775,7 @@
   }
 
   function hojaMoverStock(i) {
-    var nombre = S.NOMBRE_VASO[i.tipo] + ' ' + i.oz + ' oz';
+    var nombre = S.etiquetaVaso(i.tipo, i.oz);
     abrirHoja(
       '<h2>' + esc(nombre) + '</h2><p class="sub">Hay ' + (i.stock || 0) + ' en stock.</p>' +
       '<div class="campo"><label>Entrada por compra</label>' +
@@ -798,7 +802,7 @@
           var n = Number($('#mEnt', h).value) || 0;
           if (n <= 0) return toast('Escribí cuántos llegaron');
           S.registrarEntrada(i.tipo, i.oz, n, 'Compra');
-          cerrarHoja(); toast('+' + n + ' ' + S.NOMBRE_VASO[i.tipo] + ' ' + i.oz + ' oz');
+          cerrarHoja(); toast('+' + n + ' ' + nombre);
         };
         $('#bCon', h).onclick = function () {
           var v = $('#mCon', h).value;
@@ -863,6 +867,27 @@
     }
     html += '</div>';
 
+    // Lo que está pasando ahora mismo, incluido lo que vende el ayudante
+    // desde su celular: llega por realtime y repinta esta lista sola.
+    var eventos = S.actividad(f, 18);
+    if (eventos.length) {
+      html += '<div class="titulo-seccion">' +
+        (esHoy ? '<span class="vivo"></span> Pasando ahora' : 'Movimiento del día') + '</div>' +
+        '<div class="tarjeta">' + eventos.map(function (e) {
+          return '<div class="evento evento--' + e.tipo + '">' +
+            '<div class="evento__hora">' + hora(e.cuando) + '</div>' +
+            '<div class="evento__cuerpo">' +
+              '<div class="item__nombre">' + esc(e.cliente) + '</div>' +
+              '<div class="item__meta">' + esc(e.detalle) +
+                (e.quien ? ' · ' + esc(e.quien) : '') + '</div>' +
+            '</div>' +
+            '<div class="item__total" style="color:' +
+              (e.tipo === 'pago' ? 'var(--lima)' : 'var(--texto-2)') + '">' +
+              (e.tipo === 'pago' ? '+' : '') + S.money(e.monto) + '</div>' +
+          '</div>';
+        }).join('') + '</div>';
+    }
+
     var metodos = Object.keys(r.porMetodo);
     if (metodos.length) {
       var maxM = Math.max.apply(null, metodos.map(function (k) { return r.porMetodo[k]; }));
@@ -891,8 +916,7 @@
       if (vk.length) {
         html += '<div class="titulo-seccion">Vasos que salieron</div><div class="tarjeta"><ul class="lista-simple">' +
           vk.sort().map(function (k) {
-            var p = k.split('-');
-            return '<li><span>' + esc(S.NOMBRE_VASO[p[0]] || p[0]) + ' ' + p[1] + ' oz</span><b>' + r.vasosUsados[k] + '</b></li>';
+            return '<li><span>' + esc(r.vasosUsados[k].etiqueta) + '</span><b>' + r.vasosUsados[k].cant + '</b></li>';
           }).join('') + '</ul></div>';
       }
 
@@ -991,7 +1015,7 @@
             return '<li data-prodedit="' + p.id + '" style="cursor:pointer">' +
               '<span>' + esc(p.nombre) +
                 (p.activo === false ? ' <span class="etiqueta etiqueta--aviso">oculto</span>' : '') +
-                '<br><span class="chico">' + (p.vaso ? esc(S.NOMBRE_VASO[p.vaso]) + ' ' + p.oz + ' oz' : 'sin vaso') + '</span></span>' +
+                '<br><span class="chico">' + (p.vaso ? esc(S.etiquetaVaso(p.vaso, p.oz)) : 'sin vaso') + '</span></span>' +
               '<b style="color:' + (p.precio ? 'var(--lima)' : 'var(--rojo)') + '">' +
                 (p.precio ? S.money(p.precio) : 'sin precio') + '</b></li>';
           }).join('') + '</ul>' +
@@ -1138,16 +1162,31 @@
         '<option value="icopor"' + (p.vaso === 'icopor' ? ' selected' : '') + '>Icopor</option>' +
         '<option value="plastico"' + (p.vaso === 'plastico' ? ' selected' : '') + '>Plástico</option>' +
       '</select><div class="ayuda">Cada venta descuenta uno de estos del inventario.</div></div>' +
-      '<div class="campo"><label>Tamaño</label><select id="qO">' +
+      '<div class="campo" id="campoOz"><label>Tamaño</label><select id="qO">' +
+        '<option value="">Sin tamaño</option>' +
         [8, 12, 16, 24].map(function (o) {
           return '<option value="' + o + '"' + (Number(p.oz) === o ? ' selected' : '') + '>' + o + ' oz</option>';
-        }).join('') + '</select></div>' +
+        }).join('') + '</select>' +
+        '<div class="ayuda">El vaso plástico es uno solo, así que no lleva tamaño.</div></div>' +
       (!nuevo ? '<div class="campo"><label>Mostrar en la grilla de venta</label><select id="qA">' +
         '<option value="1"' + (p.activo !== false ? ' selected' : '') + '>Sí</option>' +
         '<option value="0"' + (p.activo === false ? ' selected' : '') + '>No, ocultar</option></select></div>' : '') +
       '<button class="btn btn--primario btn--bloque" id="qG">Guardar</button>' +
       (!nuevo ? '<button class="btn btn--fantasma btn--peligro btn--bloque btn--chico mt" id="qD">Eliminar producto</button>' : ''),
       function (h) {
+        var selVaso = $('#qV', h), selOz = $('#qO', h);
+
+        // El plástico no tiene tamaños: el selector se apaga para que no
+        // quede un producto apuntando a una fila de inventario que no existe.
+        function ajustarTamano() {
+          var esPlastico = selVaso.value === 'plastico';
+          if (esPlastico) selOz.value = '';
+          selOz.disabled = esPlastico;
+          $('#campoOz', h).style.opacity = esPlastico ? '.45' : '';
+        }
+        selVaso.onchange = ajustarTamano;
+        ajustarTamano();
+
         $('#qG', h).onclick = function () {
           var nombre = $('#qN', h).value.trim();
           if (!nombre) return toast('Ponele nombre');
@@ -1156,8 +1195,8 @@
             nombre: nombre,
             precio: Number($('#qP', h).value) || 0,
             categoria: $('#qC', h).value,
-            vaso: $('#qV', h).value || null,
-            oz: Number($('#qO', h).value),
+            vaso: selVaso.value || null,
+            oz: selOz.value === '' ? null : Number(selOz.value),
             activo: $('#qA', h) ? $('#qA', h).value === '1' : true
           });
           cerrarHoja(); toast('Guardado');

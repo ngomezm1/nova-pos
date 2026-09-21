@@ -9,7 +9,7 @@ Funciona como app en el celular, sin costo de licencia y sin servidor propio.
 - **Cuentas por nombre.** Como no hay mesas, cada cliente es un nombre ("Andrés", "Gorra roja"). Se ve en vivo cuánto debe cada uno.
 - **Pagos parciales.** Si abona $20.000 de $67.000, la cuenta sigue abierta con el saldo restante. Nada se borra.
 - **Dividir la cuenta.** Se marca qué vasos se lleva cada persona y la app cobra exactamente eso; el resto sigue debiéndose.
-- **Inventario de vasos.** Icopor y plástico en 8, 12, 16 y 24 oz. Cada venta descuenta el vaso automáticamente, con alerta cuando se está acabando.
+- **Inventario de vasos.** Icopor en 8, 12, 16 y 24 oz, y el vaso plástico de las micheladas, que es uno solo y no lleva tamaño. Cada venta descuenta el vaso automáticamente, con alerta cuando se está acabando.
 - **Resumen diario.** Recaudado, por cobrar, ticket promedio, cómo pagaron, qué se vendió, cuántos vasos salieron y quién debe. Se descarga en Excel.
 - **Dos celulares en vivo.** El tuyo y el del ayudante ven las mismas cuentas al instante.
 - **Roles.** El ayudante solo vende. No ve inventario ni los totales del negocio, y no puede cambiar precios.
@@ -77,7 +77,7 @@ Son tres partes. Calculá una hora la primera vez.
 4. Pegá la *Project URL* y la clave *anon public* de la Parte 1 → **Conectar**.
 5. Iniciá sesión con el correo y contraseña que creaste.
 6. Andá a **Inventario** y cargá cuántos vasos tenés de cada tamaño (**Mover** → *Entrada por compra*).
-7. Andá a **Ajustes** → **Productos** y poneles precio a las micheladas y los cócteles (vienen en cero a propósito).
+7. Revisá **Ajustes** → **Productos**. Vienen los 8 granizados del menú y la **Michelada a $12.000**. Si vendés algo más, lo agregás ahí.
 
 **En el del ayudante:**
 

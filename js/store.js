@@ -132,22 +132,32 @@
     { nombre: 'Original 12 oz', categoria: 'original', oz: 12, precio: 13000, vaso: 'icopor',  orden: 6 },
     { nombre: 'Original 16 oz', categoria: 'original', oz: 16, precio: 17000, vaso: 'icopor',  orden: 7 },
     { nombre: 'Original 24 oz', categoria: 'original', oz: 24, precio: 23000, vaso: 'icopor',  orden: 8 },
-    // Micheladas — vaso plástico. precio 0 = falta definirlo, la app lo marca.
-    { nombre: 'Michelada 16 oz', categoria: 'michelada', oz: 16, precio: 0, vaso: 'plastico', orden: 9 },
-    { nombre: 'Michelada 24 oz', categoria: 'michelada', oz: 24, precio: 0, vaso: 'plastico', orden: 10 },
-    // Cócteles — vaso plástico
-    { nombre: 'Coctel 12 oz', categoria: 'coctel', oz: 12, precio: 0, vaso: 'plastico', orden: 11 },
-    { nombre: 'Coctel 16 oz', categoria: 'coctel', oz: 16, precio: 0, vaso: 'plastico', orden: 12 }
+    // Michelada — vaso plástico, de un solo tipo y sin tamaños.
+    { nombre: 'Michelada', categoria: 'michelada', oz: null, precio: 12000, vaso: 'plastico', orden: 9 }
   ];
 
   var VASOS = [
     { tipo: 'icopor',   oz: 8  }, { tipo: 'icopor',   oz: 12 },
     { tipo: 'icopor',   oz: 16 }, { tipo: 'icopor',   oz: 24 },
-    { tipo: 'plastico', oz: 8  }, { tipo: 'plastico', oz: 12 },
-    { tipo: 'plastico', oz: 16 }, { tipo: 'plastico', oz: 24 }
+    { tipo: 'plastico', oz: null }
   ];
 
   var NOMBRE_VASO = { icopor: 'Icopor', plastico: 'Plástico' };
+
+  // El vaso plástico es uno solo: no lleva onzas. Estas tres funciones son el
+  // único lugar donde se decide cómo se nombra y se compara un vaso sin tamaño.
+  function normOz(oz) {
+    return (oz === null || oz === undefined || oz === '') ? null : Number(oz);
+  }
+
+  function claveVaso(tipo, oz) {
+    return tipo + '-' + (normOz(oz) === null ? 'unico' : normOz(oz));
+  }
+
+  function etiquetaVaso(tipo, oz) {
+    var n = NOMBRE_VASO[tipo] || tipo;
+    return normOz(oz) === null ? n : n + ' ' + normOz(oz) + ' oz';
+  }
 
   function sembrar() {
     // Con Supabase conectado el catálogo y el inventario ya existen en el servidor
@@ -178,6 +188,13 @@
     return !(global.NOVA && global.NOVA.sesion) || global.NOVA.sesion.esDueno();
   }
 
+  // Quién registró el movimiento. En modo local no hay varios usuarios,
+  // así que firmar cada venta con un nombre solo ensucia la pantalla.
+  function quien() {
+    if (!(global.NOVA && global.NOVA.cloud && global.NOVA.cloud.configurado())) return '';
+    return global.NOVA.sesion ? global.NOVA.sesion.nombre() : '';
+  }
+
   /* ---------- productos ---------- */
 
   function productos() {
@@ -189,6 +206,9 @@
   }
 
   function guardarProducto(datos) {
+    // El vaso plástico no tiene tamaño: se guarda sin onzas para que empate
+    // con su única fila de inventario.
+    datos.oz = datos.vaso === 'plastico' ? null : normOz(datos.oz);
     if (datos.id) {
       actualizar('productos', datos.id, datos);
     } else {
@@ -210,12 +230,13 @@
   function inventario() {
     return vivos('inventario').sort(function (a, b) {
       if (a.tipo !== b.tipo) return a.tipo === 'icopor' ? -1 : 1;
-      return a.oz - b.oz;
+      return (normOz(a.oz) || 0) - (normOz(b.oz) || 0);
     });
   }
 
   function stockDe(tipo, oz) {
-    var a = vivos('inventario').filter(function (i) { return i.tipo === tipo && i.oz === oz; });
+    var clave = claveVaso(tipo, oz);
+    var a = vivos('inventario').filter(function (i) { return claveVaso(i.tipo, i.oz) === clave; });
     return a.length ? a[0] : null;
   }
 
@@ -223,20 +244,20 @@
   function moverStock(tipo, oz, delta, motivo, refCuenta, nota) {
     if (!tipo || !delta || !inventarioLocal()) return;
     var inv = stockDe(tipo, oz);
-    if (!inv) inv = insertar('inventario', { tipo: tipo, oz: oz, stock: 0, minimo: 20 });
+    if (!inv) inv = insertar('inventario', { tipo: tipo, oz: normOz(oz), stock: 0, minimo: 20 });
     actualizar('inventario', inv.id, { stock: (inv.stock || 0) + delta });
     insertar('movimientos', {
-      tipo_vaso: tipo, oz: oz, delta: delta, motivo: motivo || 'ajuste',
+      tipo_vaso: tipo, oz: normOz(oz), delta: delta, motivo: motivo || 'ajuste',
       cuenta_id: refCuenta || null, nota: nota || '', fecha: diaNegocio(), created_at: now()
     });
   }
 
   function registrarEntrada(tipo, oz, cantidad, nota) {
     var inv = stockDe(tipo, oz);
-    if (!inv) inv = insertar('inventario', { tipo: tipo, oz: oz, stock: 0, minimo: 20 });
+    if (!inv) inv = insertar('inventario', { tipo: tipo, oz: normOz(oz), stock: 0, minimo: 20 });
     actualizar('inventario', inv.id, { stock: (inv.stock || 0) + Math.abs(cantidad) });
     insertar('movimientos', {
-      tipo_vaso: tipo, oz: oz, delta: Math.abs(cantidad), motivo: 'compra',
+      tipo_vaso: tipo, oz: normOz(oz), delta: Math.abs(cantidad), motivo: 'compra',
       cuenta_id: null, nota: nota || '', fecha: diaNegocio(), created_at: now()
     });
     commit(['inventario', 'movimientos']);
@@ -244,12 +265,12 @@
 
   function ajustarStock(tipo, oz, nuevoValor, nota) {
     var inv = stockDe(tipo, oz);
-    if (!inv) inv = insertar('inventario', { tipo: tipo, oz: oz, stock: 0, minimo: 20 });
+    if (!inv) inv = insertar('inventario', { tipo: tipo, oz: normOz(oz), stock: 0, minimo: 20 });
     var delta = Number(nuevoValor) - (inv.stock || 0);
     if (delta === 0) return;
     actualizar('inventario', inv.id, { stock: Number(nuevoValor) });
     insertar('movimientos', {
-      tipo_vaso: tipo, oz: oz, delta: delta, motivo: 'ajuste',
+      tipo_vaso: tipo, oz: normOz(oz), delta: delta, motivo: 'ajuste',
       cuenta_id: null, nota: nota || 'Conteo físico', fecha: diaNegocio(), created_at: now()
     });
     commit(['inventario', 'movimientos']);
@@ -260,7 +281,7 @@
     if (!inv) return;
     actualizar('inventario', inv.id, { stock: (inv.stock || 0) - Math.abs(cantidad) });
     insertar('movimientos', {
-      tipo_vaso: tipo, oz: oz, delta: -Math.abs(cantidad), motivo: 'merma',
+      tipo_vaso: tipo, oz: normOz(oz), delta: -Math.abs(cantidad), motivo: 'merma',
       cuenta_id: null, nota: nota || '', fecha: diaNegocio(), created_at: now()
     });
     commit(['inventario', 'movimientos']);
@@ -302,7 +323,7 @@
     if (!nombre) return null;
     var c = insertar('cuentas', {
       nombre: nombre, nota: nota || '', estado: 'abierta',
-      creada_por: global.NOVA && global.NOVA.sesion ? global.NOVA.sesion.nombre() : '',
+      creada_por: quien(),
       created_at: now(), closed_at: null, fecha: diaNegocio()
     });
     commit(['cuentas']);
@@ -366,7 +387,7 @@
         cuenta_id: cuentaId, producto_id: productoId, nombre: p.nombre,
         precio: p.precio, cantidad: cantidad, pagadas: 0,
         vaso: p.vaso || null, oz: p.oz || null,
-        vendido_por: global.NOVA && global.NOVA.sesion ? global.NOVA.sesion.nombre() : '',
+        vendido_por: quien(),
         created_at: now(), fecha: diaNegocio()
       });
     }
@@ -396,7 +417,9 @@
 
   /* ---------- pagos ---------- */
 
-  var METODOS = ['Efectivo', 'Nequi', 'Daviplata', 'Transferencia', 'Tarjeta', 'Otro'];
+  // Dos opciones y nada más: nombrar bancos en la pantalla de cobro solo
+  // genera dudas a la hora de marcar el pago.
+  var METODOS = ['Efectivo', 'Transferencia'];
 
   function pagosDe(cuentaId) {
     return vivos('pagos')
@@ -447,7 +470,7 @@
       quien: (opts.quien || '').trim(),
       nota: opts.nota || '',
       cubre: cubre,
-      cobrado_por: global.NOVA && global.NOVA.sesion ? global.NOVA.sesion.nombre() : '',
+      cobrado_por: quien(),
       created_at: now(), fecha: diaNegocio()
     });
 
@@ -510,8 +533,9 @@
     var vasosUsados = {};
     itemsDia.forEach(function (i) {
       if (!i.vaso) return;
-      var k = i.vaso + '-' + i.oz;
-      vasosUsados[k] = (vasosUsados[k] || 0) + i.cantidad;
+      var k = claveVaso(i.vaso, i.oz);
+      if (!vasosUsados[k]) vasosUsados[k] = { etiqueta: etiquetaVaso(i.vaso, i.oz), cant: 0 };
+      vasosUsados[k].cant += i.cantidad;
     });
 
     // Deuda viva: todo lo que sigue sin pagarse, sin importar el día en que se pidió.
@@ -539,6 +563,41 @@
       vasosUsados: vasosUsados,
       pendientes: pendientes
     };
+  }
+
+  /* Línea de tiempo del día: ventas y cobros mezclados, lo más nuevo primero.
+   * Es lo que el dueño mira cuando no está parado en el mostrador.
+   */
+  function actividad(fecha, limite) {
+    fecha = fecha || diaNegocio();
+    var eventos = [];
+
+    vivos('items').filter(function (i) { return i.fecha === fecha; }).forEach(function (i) {
+      var c = buscar('cuentas', i.cuenta_id);
+      eventos.push({
+        tipo: 'venta',
+        cuando: i.created_at,
+        cliente: c ? c.nombre : 'Sin cuenta',
+        detalle: i.cantidad + ' × ' + i.nombre,
+        monto: i.precio * i.cantidad,
+        quien: i.vendido_por || ''
+      });
+    });
+
+    vivos('pagos').filter(function (p) { return p.fecha === fecha; }).forEach(function (p) {
+      var c = buscar('cuentas', p.cuenta_id);
+      eventos.push({
+        tipo: 'pago',
+        cuando: p.created_at,
+        cliente: c ? c.nombre : 'Sin cuenta',
+        detalle: 'Pagó en ' + p.metodo.toLowerCase() + (p.quien ? ' · ' + p.quien : ''),
+        monto: p.monto,
+        quien: p.cobrado_por || ''
+      });
+    });
+
+    eventos.sort(function (a, b) { return (b.cuando || '').localeCompare(a.cuando || ''); });
+    return limite ? eventos.slice(0, limite) : eventos;
   }
 
   function fechasConMovimiento() {
@@ -623,6 +682,7 @@
   global.NOVA.store = {
     TABLAS: TABLAS, TABLAS_SOLO_DUENO: TABLAS_SOLO_DUENO,
     VASOS: VASOS, METODOS: METODOS, NOMBRE_VASO: NOMBRE_VASO,
+    normOz: normOz, claveVaso: claveVaso, etiquetaVaso: etiquetaVaso,
     uid: uid, now: now, money: money, diaNegocio: diaNegocio,
     suscribir: function (fn) { listeners.push(fn); },
     recargar: function () { cargar(); emitir(); },
@@ -647,7 +707,7 @@
     pagosDe: pagosDe, registrarPago: registrarPago, anularPago: anularPago,
     totalCuenta: totalCuenta, pagadoCuenta: pagadoCuenta, saldoCuenta: saldoCuenta,
 
-    resumen: resumen, fechasConMovimiento: fechasConMovimiento,
+    resumen: resumen, actividad: actividad, fechasConMovimiento: fechasConMovimiento,
     exportar: exportar, importar: importar, limpiarTodo: limpiarTodo,
 
     sucios: sucios, limpiarSucios: limpiarSucios, aplicarRemotos: aplicarRemotos,
