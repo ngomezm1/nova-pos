@@ -1218,17 +1218,16 @@
       '<p class="sub">Pegá los datos de tu proyecto de Supabase. Están en Project Settings → API.</p>' +
       '<div class="campo"><label>Project URL</label>' +
         '<input id="cUrl" placeholder="https://xxxxxxxx.supabase.co" autocapitalize="off" autocomplete="off" spellcheck="false"></div>' +
-      '<div class="campo"><label>Clave anon public</label>' +
-        '<textarea id="cKey" placeholder="eyJhbGciOi..." autocapitalize="off" spellcheck="false"></textarea>' +
-        '<div class="ayuda">Es la clave pública. Nunca pegues aquí la clave <b>service_role</b>.</div></div>' +
+      '<div class="campo"><label>Clave pública</label>' +
+        '<textarea id="cKey" placeholder="sb_publishable_..." autocapitalize="off" spellcheck="false"></textarea>' +
+        '<div class="ayuda">La que dice <b>Publishable key</b> (o <b>anon public</b>). ' +
+        'Nunca la <b>secret</b> ni la <b>service_role</b>.</div></div>' +
       '<div id="cAviso"></div>' +
       '<button class="btn btn--primario btn--bloque" id="bGuardarCfg">Conectar</button>',
       function (h) {
         $('#bGuardarCfg', h).onclick = function () {
           try {
-            var k = $('#cKey', h).value.trim();
-            if (/service_role/.test(k)) throw new Error('Esa es la clave service_role. Usá la anon public.');
-            C.guardarCfg($('#cUrl', h).value, k);
+            C.guardarCfg($('#cUrl', h).value, $('#cKey', h).value);
             cerrarHoja();
             toast('Conectando…');
             location.reload();

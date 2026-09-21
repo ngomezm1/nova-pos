@@ -12,7 +12,9 @@
 
   var CFG_KEY = 'nova.cfg';
   var SYNC_KEY = 'nova.sync.';
-  var SDK = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js';
+  // Sin fijar parche: Supabase estrenó un formato de llaves (sb_publishable_…)
+  // y conviene tomar siempre la última v2, que lo soporta.
+  var SDK = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js';
 
   var TABLAS_TODAS = ['productos', 'cuentas', 'items', 'pagos', 'inventario', 'movimientos'];
   var TABLAS_AYUDANTE = ['productos', 'cuentas', 'items', 'pagos'];
@@ -36,10 +38,23 @@
   function guardarCfg(url, anonKey) {
     url = (url || '').trim().replace(/\/+$/, '');
     anonKey = (anonKey || '').trim();
-    if (!url || !anonKey) throw new Error('Faltan la URL y la clave anon del proyecto.');
+
+    if (!url || !anonKey) throw new Error('Faltan la URL y la clave pública del proyecto.');
     if (!/^https:\/\/.+\.supabase\.co$/.test(url)) {
       throw new Error('La URL debe verse así: https://xxxxxxxx.supabase.co');
     }
+
+    // Pegar una llave privada acá la publicaría en el celular y anularía de un
+    // golpe todos los permisos: quien la tuviera podría leer el inventario.
+    if (/^sb_secret_/.test(anonKey) || /service_role/.test(anonKey)) {
+      throw new Error('Esa es una clave PRIVADA (secret / service_role). ' +
+                      'Usá la publishable o la anon public.');
+    }
+    if (!/^sb_publishable_/.test(anonKey) && !/^eyJ/.test(anonKey)) {
+      throw new Error('Esa clave no parece la correcta. Debe empezar con ' +
+                      '"sb_publishable_" o con "eyJ".');
+    }
+
     localStorage.setItem(CFG_KEY, JSON.stringify({ url: url, anonKey: anonKey }));
   }
 
