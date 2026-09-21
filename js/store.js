@@ -6,7 +6,8 @@
   'use strict';
 
   var LS = 'nova.v1.';
-  var TABLAS = ['productos', 'cuentas', 'items', 'pagos', 'inventario', 'movimientos'];
+  var SEDE_KEY = 'nova.sede';
+  var TABLAS = ['sedes', 'productos', 'cuentas', 'items', 'pagos', 'inventario', 'movimientos'];
 
   // Tablas que un ayudante nunca descarga ni sube. El servidor además se lo prohíbe.
   var TABLAS_SOLO_DUENO = ['inventario', 'movimientos'];
@@ -159,12 +160,20 @@
     return normOz(oz) === null ? n : n + ' ' + normOz(oz) + ' oz';
   }
 
+  var SEDES_BASE = ['Sede Principal', 'Sede Exterior'];
+
   function sembrar() {
     // Con Supabase conectado el catálogo y el inventario ya existen en el servidor
     // y llegan por sincronización. Sembrarlos acá crearía duplicados en cero.
     if (global.NOVA && global.NOVA.cloud && global.NOVA.cloud.configurado()) return;
 
     var cambio = [];
+    if (vivos('sedes').length === 0) {
+      SEDES_BASE.forEach(function (n, i) {
+        insertar('sedes', { nombre: n, orden: i + 1, activa: true });
+      });
+      cambio.push('sedes');
+    }
     if (vivos('productos').length === 0) {
       CATALOGO_BASE.forEach(function (p) {
         insertar('productos', {
@@ -175,9 +184,12 @@
       cambio.push('productos');
     }
     // El ayudante no siembra inventario: no le pertenece esa tabla.
+    // Cada sede lleva su propio conteo de vasos.
     if (esDueno() && vivos('inventario').length === 0) {
-      VASOS.forEach(function (v) {
-        insertar('inventario', { tipo: v.tipo, oz: v.oz, stock: 0, minimo: 20 });
+      sedes().forEach(function (s) {
+        VASOS.forEach(function (v) {
+          insertar('inventario', { sede_id: s.id, tipo: v.tipo, oz: v.oz, stock: 0, minimo: 20 });
+        });
       });
       cambio.push('inventario');
     }
@@ -193,6 +205,63 @@
   function quien() {
     if (!(global.NOVA && global.NOVA.cloud && global.NOVA.cloud.configurado())) return '';
     return global.NOVA.sesion ? global.NOVA.sesion.nombre() : '';
+  }
+
+  /* ---------- sedes ---------- */
+
+  /* La sede es del dispositivo, no del usuario: el mismo ayudante puede estar
+   * hoy en una sede y mañana en otra, y el celular es el que está parado en un
+   * lugar. Por eso vive en localStorage y no viaja en la sincronización.
+   */
+
+  function sedes() {
+    return vivos('sedes').sort(function (a, b) { return (a.orden || 0) - (b.orden || 0); });
+  }
+
+  function sedesActivas() {
+    return sedes().filter(function (s) { return s.activa !== false; });
+  }
+
+  function sedeActual() {
+    var id = localStorage.getItem(SEDE_KEY);
+    if (!id) return null;
+    var s = buscar('sedes', id);
+    // Si la sede se borró o se desactivó, hay que volver a elegir.
+    return (s && !s.deleted && s.activa !== false) ? s : null;
+  }
+
+  function fijarSede(id) {
+    var s = buscar('sedes', id);
+    if (!s || s.deleted) return false;
+    localStorage.setItem(SEDE_KEY, id);
+    emitir();
+    return true;
+  }
+
+  function olvidarSede() {
+    localStorage.removeItem(SEDE_KEY);
+    emitir();
+  }
+
+  function nombreSede(id) {
+    var s = buscar('sedes', id);
+    return s ? s.nombre : 'Sin sede';
+  }
+
+  function guardarSede(datos) {
+    if (datos.id) {
+      actualizar('sedes', datos.id, datos);
+    } else {
+      var max = sedes().reduce(function (m, s) { return Math.max(m, s.orden || 0); }, 0);
+      datos.orden = max + 1;
+      datos.activa = true;
+      var nueva = insertar('sedes', datos);
+      // Una sede sin vasos cargados no sirve: se le crean las filas en cero.
+      VASOS.forEach(function (v) {
+        insertar('inventario', { sede_id: nueva.id, tipo: v.tipo, oz: v.oz, stock: 0, minimo: 20 });
+      });
+    }
+    commit(['sedes', 'inventario']);
   }
 
   /* ---------- productos ---------- */
@@ -227,64 +296,99 @@
 
   /* ---------- inventario ---------- */
 
-  function inventario() {
-    return vivos('inventario').sort(function (a, b) {
-      if (a.tipo !== b.tipo) return a.tipo === 'icopor' ? -1 : 1;
-      return (normOz(a.oz) || 0) - (normOz(b.oz) || 0);
-    });
+  // Sin sedeId devuelve el inventario de todas las sedes.
+  function inventario(sedeId) {
+    return vivos('inventario')
+      .filter(function (i) { return !sedeId || i.sede_id === sedeId; })
+      .sort(function (a, b) {
+        if (a.tipo !== b.tipo) return a.tipo === 'icopor' ? -1 : 1;
+        return (normOz(a.oz) || 0) - (normOz(b.oz) || 0);
+      });
   }
 
-  function stockDe(tipo, oz) {
+  function stockDe(tipo, oz, sedeId) {
     var clave = claveVaso(tipo, oz);
-    var a = vivos('inventario').filter(function (i) { return claveVaso(i.tipo, i.oz) === clave; });
+    var a = vivos('inventario').filter(function (i) {
+      return i.sede_id === sedeId && claveVaso(i.tipo, i.oz) === clave;
+    });
     return a.length ? a[0] : null;
   }
 
-  // delta negativo = salida (venta), positivo = entrada (compra/devolución)
-  function moverStock(tipo, oz, delta, motivo, refCuenta, nota) {
-    if (!tipo || !delta || !inventarioLocal()) return;
-    var inv = stockDe(tipo, oz);
-    if (!inv) inv = insertar('inventario', { tipo: tipo, oz: normOz(oz), stock: 0, minimo: 20 });
-    actualizar('inventario', inv.id, { stock: (inv.stock || 0) + delta });
+  /* Todo movimiento de stock pertenece a una sede. Sin sede no se toca nada:
+   * es preferible no mover inventario a moverlo en el lugar equivocado.
+   */
+  function filaStock(sedeId, tipo, oz) {
+    var inv = stockDe(tipo, oz, sedeId);
+    if (!inv) {
+      inv = insertar('inventario', {
+        sede_id: sedeId, tipo: tipo, oz: normOz(oz), stock: 0, minimo: 20
+      });
+    }
+    return inv;
+  }
+
+  function anotarMovimiento(sedeId, tipo, oz, delta, motivo, refCuenta, nota) {
     insertar('movimientos', {
-      tipo_vaso: tipo, oz: normOz(oz), delta: delta, motivo: motivo || 'ajuste',
-      cuenta_id: refCuenta || null, nota: nota || '', fecha: diaNegocio(), created_at: now()
+      sede_id: sedeId, tipo_vaso: tipo, oz: normOz(oz), delta: delta,
+      motivo: motivo || 'ajuste', cuenta_id: refCuenta || null,
+      nota: nota || '', fecha: diaNegocio(), created_at: now()
     });
   }
 
-  function registrarEntrada(tipo, oz, cantidad, nota) {
-    var inv = stockDe(tipo, oz);
-    if (!inv) inv = insertar('inventario', { tipo: tipo, oz: normOz(oz), stock: 0, minimo: 20 });
-    actualizar('inventario', inv.id, { stock: (inv.stock || 0) + Math.abs(cantidad) });
-    insertar('movimientos', {
-      tipo_vaso: tipo, oz: normOz(oz), delta: Math.abs(cantidad), motivo: 'compra',
-      cuenta_id: null, nota: nota || '', fecha: diaNegocio(), created_at: now()
-    });
+  // delta negativo = salida (venta), positivo = entrada (compra/devolución)
+  function moverStock(sedeId, tipo, oz, delta, motivo, refCuenta, nota) {
+    if (!sedeId || !tipo || !delta || !inventarioLocal()) return;
+    var inv = filaStock(sedeId, tipo, oz);
+    actualizar('inventario', inv.id, { stock: (inv.stock || 0) + delta });
+    anotarMovimiento(sedeId, tipo, oz, delta, motivo, refCuenta, nota);
+  }
+
+  function registrarEntrada(sedeId, tipo, oz, cantidad, nota) {
+    if (!sedeId) return;
+    var inv = filaStock(sedeId, tipo, oz);
+    var n = Math.abs(Number(cantidad) || 0);
+    if (!n) return;
+    actualizar('inventario', inv.id, { stock: (inv.stock || 0) + n });
+    anotarMovimiento(sedeId, tipo, oz, n, 'compra', null, nota);
     commit(['inventario', 'movimientos']);
   }
 
-  function ajustarStock(tipo, oz, nuevoValor, nota) {
-    var inv = stockDe(tipo, oz);
-    if (!inv) inv = insertar('inventario', { tipo: tipo, oz: normOz(oz), stock: 0, minimo: 20 });
+  function ajustarStock(sedeId, tipo, oz, nuevoValor, nota) {
+    if (!sedeId) return;
+    var inv = filaStock(sedeId, tipo, oz);
     var delta = Number(nuevoValor) - (inv.stock || 0);
     if (delta === 0) return;
     actualizar('inventario', inv.id, { stock: Number(nuevoValor) });
-    insertar('movimientos', {
-      tipo_vaso: tipo, oz: normOz(oz), delta: delta, motivo: 'ajuste',
-      cuenta_id: null, nota: nota || 'Conteo físico', fecha: diaNegocio(), created_at: now()
-    });
+    anotarMovimiento(sedeId, tipo, oz, delta, 'ajuste', null, nota || 'Conteo físico');
     commit(['inventario', 'movimientos']);
   }
 
-  function registrarMerma(tipo, oz, cantidad, nota) {
-    var inv = stockDe(tipo, oz);
-    if (!inv) return;
-    actualizar('inventario', inv.id, { stock: (inv.stock || 0) - Math.abs(cantidad) });
-    insertar('movimientos', {
-      tipo_vaso: tipo, oz: normOz(oz), delta: -Math.abs(cantidad), motivo: 'merma',
-      cuenta_id: null, nota: nota || '', fecha: diaNegocio(), created_at: now()
-    });
+  function registrarMerma(sedeId, tipo, oz, cantidad, nota) {
+    if (!sedeId) return;
+    var inv = stockDe(tipo, oz, sedeId);
+    var n = Math.abs(Number(cantidad) || 0);
+    if (!inv || !n) return;
+    actualizar('inventario', inv.id, { stock: (inv.stock || 0) - n });
+    anotarMovimiento(sedeId, tipo, oz, -n, 'merma', null, nota);
     commit(['inventario', 'movimientos']);
+  }
+
+  // Traslado entre sedes: sale de una y entra a la otra en un solo gesto,
+  // que es como realmente se mueven los vasos entre locales.
+  function trasladarVasos(desdeSede, haciaSede, tipo, oz, cantidad) {
+    var n = Math.abs(Number(cantidad) || 0);
+    if (!desdeSede || !haciaSede || desdeSede === haciaSede || !n) return false;
+
+    var origen = filaStock(desdeSede, tipo, oz);
+    actualizar('inventario', origen.id, { stock: (origen.stock || 0) - n });
+    anotarMovimiento(desdeSede, tipo, oz, -n, 'traslado', null, 'Hacia ' + nombreSede(haciaSede));
+
+    var destino = filaStock(haciaSede, tipo, oz);
+    actualizar('inventario', destino.id, { stock: (destino.stock || 0) + n });
+    anotarMovimiento(haciaSede, tipo, oz, n, 'traslado', null, 'Desde ' + nombreSede(desdeSede));
+
+    commit(['inventario', 'movimientos']);
+    return true;
   }
 
   function fijarMinimo(invId, minimo) {
@@ -292,13 +396,15 @@
     commit(['inventario']);
   }
 
-  function alertasStock() {
-    return inventario().filter(function (i) { return (i.stock || 0) <= (i.minimo || 0); });
+  function alertasStock(sedeId) {
+    return inventario(sedeId).filter(function (i) { return (i.stock || 0) <= (i.minimo || 0); });
   }
 
-  function movimientosDe(fecha) {
+  function movimientosDe(fecha, sedeId) {
     return vivos('movimientos')
-      .filter(function (m) { return !fecha || m.fecha === fecha; })
+      .filter(function (m) {
+        return (!fecha || m.fecha === fecha) && (!sedeId || m.sede_id === sedeId);
+      })
       .sort(function (a, b) { return (b.created_at || '').localeCompare(a.created_at || ''); });
   }
 
@@ -306,24 +412,31 @@
 
   function cuentas() { return vivos('cuentas'); }
 
-  function cuentasAbiertas() {
+  function cuentasAbiertas(sedeId) {
     return cuentas()
-      .filter(function (c) { return c.estado === 'abierta'; })
+      .filter(function (c) {
+        return c.estado === 'abierta' && (!sedeId || c.sede_id === sedeId);
+      })
       .sort(function (a, b) { return (b.created_at || '').localeCompare(a.created_at || ''); });
   }
 
-  function cuentasCerradas(fecha) {
+  function cuentasCerradas(fecha, sedeId) {
     return cuentas()
-      .filter(function (c) { return c.estado === 'cerrada' && (!fecha || c.fecha === fecha); })
+      .filter(function (c) {
+        return c.estado === 'cerrada'
+          && (!fecha || c.fecha === fecha)
+          && (!sedeId || c.sede_id === sedeId);
+      })
       .sort(function (a, b) { return (b.closed_at || '').localeCompare(a.closed_at || ''); });
   }
 
-  function crearCuenta(nombre, nota) {
+  function crearCuenta(nombre, nota, sedeId) {
     nombre = (nombre || '').trim();
-    if (!nombre) return null;
+    var sede = sedeId || (sedeActual() && sedeActual().id);
+    if (!nombre || !sede) return null;
     var c = insertar('cuentas', {
       nombre: nombre, nota: nota || '', estado: 'abierta',
-      creada_por: quien(),
+      sede_id: sede, creada_por: quien(),
       created_at: now(), closed_at: null, fecha: diaNegocio()
     });
     commit(['cuentas']);
@@ -353,7 +466,7 @@
   function cancelarCuenta(id) {
     if (pagosDe(id).length > 0) return false;
     itemsDe(id).forEach(function (it) {
-      if (it.vaso) moverStock(it.vaso, it.oz, it.cantidad, 'devolucion', id, 'Cuenta cancelada');
+      if (it.vaso) moverStock(it.sede_id, it.vaso, it.oz, it.cantidad, 'devolucion', id, 'Cuenta cancelada');
       borrar('items', it.id);
     });
     borrar('cuentas', id);
@@ -371,7 +484,8 @@
 
   function agregarItem(cuentaId, productoId, cantidad) {
     var p = buscar('productos', productoId);
-    if (!p) return null;
+    var cuenta = buscar('cuentas', cuentaId);
+    if (!p || !cuenta) return null;
     cantidad = Math.max(1, Number(cantidad) || 1);
 
     // Si ya hay una línea igual sin pagar, se acumula en vez de duplicar.
@@ -387,11 +501,12 @@
         cuenta_id: cuentaId, producto_id: productoId, nombre: p.nombre,
         precio: p.precio, cantidad: cantidad, pagadas: 0,
         vaso: p.vaso || null, oz: p.oz || null,
+        sede_id: cuenta.sede_id,
         vendido_por: quien(),
         created_at: now(), fecha: diaNegocio()
       });
     }
-    if (p.vaso) moverStock(p.vaso, p.oz, -cantidad, 'venta', cuentaId, p.nombre);
+    if (p.vaso) moverStock(cuenta.sede_id, p.vaso, p.oz, -cantidad, 'venta', cuentaId, p.nombre);
     commit();
     return it;
   }
@@ -405,7 +520,8 @@
 
     var delta = nuevaCantidad - it.cantidad;
     if (it.vaso && delta !== 0) {
-      moverStock(it.vaso, it.oz, -delta, delta < 0 ? 'devolucion' : 'venta', it.cuenta_id, it.nombre);
+      moverStock(it.sede_id, it.vaso, it.oz, -delta,
+                 delta < 0 ? 'devolucion' : 'venta', it.cuenta_id, it.nombre);
     }
     if (nuevaCantidad === 0) borrar('items', itemId);
     else actualizar('items', itemId, { cantidad: nuevaCantidad });
@@ -464,8 +580,10 @@
 
     if (monto <= 0) return null;
 
+    var cuenta = buscar('cuentas', cuentaId);
     var pago = insertar('pagos', {
       cuenta_id: cuentaId, monto: monto,
+      sede_id: cuenta ? cuenta.sede_id : null,
       metodo: opts.metodo || 'Efectivo',
       quien: (opts.quien || '').trim(),
       nota: opts.nota || '',
@@ -503,11 +621,16 @@
 
   /* ---------- resumen del día ---------- */
 
-  function resumen(fecha) {
+  // sedeId vacío = consolidado de todas las sedes.
+  function resumen(fecha, sedeId) {
     fecha = fecha || diaNegocio();
 
-    var itemsDia = vivos('items').filter(function (i) { return i.fecha === fecha; });
-    var pagosDia = vivos('pagos').filter(function (p) { return p.fecha === fecha; });
+    var itemsDia = vivos('items').filter(function (i) {
+      return i.fecha === fecha && (!sedeId || i.sede_id === sedeId);
+    });
+    var pagosDia = vivos('pagos').filter(function (p) {
+      return p.fecha === fecha && (!sedeId || p.sede_id === sedeId);
+    });
 
     var vendido = itemsDia.reduce(function (s, i) { return s + i.precio * i.cantidad; }, 0);
     var recaudado = pagosDia.reduce(function (s, p) { return s + p.monto; }, 0);
@@ -539,7 +662,7 @@
     });
 
     // Deuda viva: todo lo que sigue sin pagarse, sin importar el día en que se pidió.
-    var pendientes = cuentasAbiertas()
+    var pendientes = cuentasAbiertas(sedeId)
       .map(function (c) { return { cuenta: c, saldo: saldoCuenta(c.id) }; })
       .filter(function (x) { return x.saldo > 0; })
       .sort(function (a, b) { return b.saldo - a.saldo; });
@@ -547,8 +670,25 @@
     var clientes = {};
     itemsDia.forEach(function (i) { clientes[i.cuenta_id] = true; });
 
+    // Comparar sedes es la razón de ser de tener varias: siempre va el desglose.
+    var porSede = {};
+    sedes().forEach(function (sd) {
+      porSede[sd.id] = { nombre: sd.nombre, vendido: 0, recaudado: 0 };
+    });
+    itemsDia.forEach(function (i) {
+      if (porSede[i.sede_id]) porSede[i.sede_id].vendido += i.precio * i.cantidad;
+    });
+    pagosDia.forEach(function (p) {
+      if (porSede[p.sede_id]) porSede[p.sede_id].recaudado += p.monto;
+    });
+
     return {
       fecha: fecha,
+      sedeId: sedeId || null,
+      porSede: Object.keys(porSede)
+        .map(function (k) { return porSede[k]; })
+        .filter(function (x) { return x.vendido || x.recaudado; })
+        .sort(function (a, b) { return b.recaudado - a.recaudado; }),
       vendido: vendido,
       recaudado: recaudado,
       porCobrar: pendientes.reduce(function (s, x) { return s + x.saldo; }, 0),
@@ -568,11 +708,14 @@
   /* Línea de tiempo del día: ventas y cobros mezclados, lo más nuevo primero.
    * Es lo que el dueño mira cuando no está parado en el mostrador.
    */
-  function actividad(fecha, limite) {
+  function actividad(fecha, limite, sedeId) {
     fecha = fecha || diaNegocio();
     var eventos = [];
+    var delTurno = function (r) {
+      return r.fecha === fecha && (!sedeId || r.sede_id === sedeId);
+    };
 
-    vivos('items').filter(function (i) { return i.fecha === fecha; }).forEach(function (i) {
+    vivos('items').filter(delTurno).forEach(function (i) {
       var c = buscar('cuentas', i.cuenta_id);
       eventos.push({
         tipo: 'venta',
@@ -580,11 +723,12 @@
         cliente: c ? c.nombre : 'Sin cuenta',
         detalle: i.cantidad + ' × ' + i.nombre,
         monto: i.precio * i.cantidad,
-        quien: i.vendido_por || ''
+        quien: i.vendido_por || '',
+        sede: nombreSede(i.sede_id)
       });
     });
 
-    vivos('pagos').filter(function (p) { return p.fecha === fecha; }).forEach(function (p) {
+    vivos('pagos').filter(delTurno).forEach(function (p) {
       var c = buscar('cuentas', p.cuenta_id);
       eventos.push({
         tipo: 'pago',
@@ -592,7 +736,8 @@
         cliente: c ? c.nombre : 'Sin cuenta',
         detalle: 'Pagó en ' + p.metodo.toLowerCase() + (p.quien ? ' · ' + p.quien : ''),
         monto: p.monto,
-        quien: p.cobrado_por || ''
+        quien: p.cobrado_por || '',
+        sede: nombreSede(p.sede_id)
       });
     });
 
@@ -718,8 +863,13 @@
     productos: productos, productosActivos: productosActivos,
     guardarProducto: guardarProducto, eliminarProducto: eliminarProducto,
 
+    sedes: sedes, sedesActivas: sedesActivas, sedeActual: sedeActual,
+    fijarSede: fijarSede, olvidarSede: olvidarSede, nombreSede: nombreSede,
+    guardarSede: guardarSede,
+
     inventario: inventario, stockDe: stockDe, registrarEntrada: registrarEntrada,
     ajustarStock: ajustarStock, registrarMerma: registrarMerma,
+    trasladarVasos: trasladarVasos,
     fijarMinimo: fijarMinimo, alertasStock: alertasStock, movimientosDe: movimientosDe,
 
     cuentas: cuentas, cuentasAbiertas: cuentasAbiertas, cuentasCerradas: cuentasCerradas,

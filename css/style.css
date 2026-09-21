@@ -204,6 +204,98 @@ main {
   box-shadow: 0 0 10px rgba(255,58,208,.8);
 }
 
+/* ---------------- sedes ---------------- */
+
+.chip-sede {
+  flex: none;
+  padding: 6px 11px;
+  border-radius: 10px;
+  border: 1px solid var(--linea);
+  background: var(--panel-2);
+  color: var(--texto-2);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .4px;
+  cursor: pointer;
+}
+
+.chip-sede:active { border-color: var(--cyan); color: var(--cyan); }
+
+/* Elegir sede al abrir: botones grandes, imposibles de errar con el pulgar. */
+.sede-opcion {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  text-align: left;
+  padding: 16px;
+  margin-bottom: 12px;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--linea);
+  background: linear-gradient(160deg, rgba(255,255,255,.07), rgba(255,255,255,.02));
+  color: var(--texto);
+  cursor: pointer;
+  transition: transform .1s, border-color .15s;
+}
+
+.sede-opcion:active { transform: scale(.98); }
+
+.sede-opcion.on {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 2px rgba(47, 228, 255, .16);
+}
+
+.sede-opcion__ini {
+  flex: none;
+  width: 48px; height: 48px;
+  border-radius: 15px;
+  display: grid;
+  place-items: center;
+  font-family: var(--display);
+  font-weight: 900;
+  font-size: 17px;
+  color: #0a0320;
+  background: linear-gradient(135deg, var(--cyan), var(--violeta));
+}
+
+.sede-opcion__txt { flex: 1; min-width: 0; font-weight: 700; font-size: 17px; }
+
+.sede-opcion__txt small {
+  display: block;
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--texto-3);
+  margin-top: 2px;
+}
+
+.pestanas-sede {
+  display: flex;
+  gap: 7px;
+  margin-bottom: 14px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.pestanas-sede button {
+  flex: 1;
+  min-width: max-content;
+  padding: 11px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--linea);
+  background: var(--panel);
+  color: var(--texto-2);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pestanas-sede button.on {
+  border-color: var(--cyan);
+  background: rgba(47, 228, 255, .14);
+  color: var(--cyan);
+}
+
 /* ---------------- piezas ---------------- */
 
 .tarjeta {

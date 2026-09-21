@@ -16,8 +16,9 @@
   // y conviene tomar siempre la última v2, que lo soporta.
   var SDK = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js';
 
-  var TABLAS_TODAS = ['productos', 'cuentas', 'items', 'pagos', 'inventario', 'movimientos'];
-  var TABLAS_AYUDANTE = ['productos', 'cuentas', 'items', 'pagos'];
+  var TABLAS_TODAS = ['sedes', 'productos', 'cuentas', 'items', 'pagos', 'inventario', 'movimientos'];
+  // El ayudante necesita las sedes para poder elegir dónde está parado.
+  var TABLAS_AYUDANTE = ['sedes', 'productos', 'cuentas', 'items', 'pagos'];
 
   var sb = null;            // cliente supabase
   var perfil = null;        // { id, nombre, rol }

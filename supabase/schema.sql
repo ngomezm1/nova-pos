@@ -3,6 +3,10 @@
 --  Pegá TODO este archivo en Supabase → SQL Editor → Run. Se puede correr
 --  varias veces sin romper nada.
 --
+--  Después de este archivo, corré en orden los que están al lado:
+--    02-historial-solo-dueno.sql   el ayudante ve solo su turno
+--    03-sedes.sql                  varias sedes, cada una con su inventario
+--
 --  Idea de seguridad: el ayudante NO tiene permiso de leer ni escribir
 --  inventario ni movimientos. Aun así sus ventas descuentan vasos, porque el
 --  descuento lo hace un trigger de la base de datos (SECURITY DEFINER), no su

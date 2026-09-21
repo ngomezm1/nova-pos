@@ -7,8 +7,14 @@
   var S = NOVA.store;
   var C = NOVA.cloud;
 
-  var vista = { pantalla: 'cuentas', cuentaId: null, fechaResumen: null, verCerradas: false };
+  var vista = {
+    pantalla: 'cuentas', cuentaId: null, fechaResumen: null,
+    sedeResumen: null,   // null = todas las sedes (solo el dueño)
+    sedeInv: null,       // sede que se está mirando en Inventario
+    verCerradas: false
+  };
   var app, hojaAbierta = null;
+  var modo = 'app';      // login | sede | app
 
   /* ---------- utilidades de DOM ---------- */
 
@@ -114,6 +120,7 @@
      ========================================================= */
 
   function pantallaLogin(mensaje, tipoMensaje) {
+    modo = 'login';
     document.body.innerHTML =
       '<div class="login">' +
         '<img src="assets/logo.jpg" alt="NOVA">' +
@@ -153,11 +160,73 @@
   }
 
   /* =========================================================
+     ELEGIR SEDE
+     ========================================================= */
+
+  /* Se pregunta una vez por celular, antes de abrir cuentas. Si el aparato está
+   * en la sede equivocada, todas las ventas de la noche quedan mal registradas
+   * y el inventario descuenta del local que no es: por eso es una pantalla
+   * propia y no un ajuste escondido.
+   */
+  function pantallaSede(cambiando) {
+    modo = 'sede';
+    var lista = S.sedesActivas();
+
+    if (!lista.length) {
+      document.body.innerHTML =
+        '<div class="login">' +
+          '<img src="assets/logo.jpg" alt="NOVA">' +
+          '<h1>NOVA POS</h1>' +
+          '<p class="lema">Cargando las sedes…</p>' +
+        '</div>';
+      return;
+    }
+
+    var actual = S.sedeActual();
+
+    document.body.innerHTML =
+      '<div class="login">' +
+        '<img src="assets/logo.jpg" alt="NOVA">' +
+        '<h1>' + (cambiando ? 'Cambiar de sede' : '¿Dónde estás?') + '</h1>' +
+        '<p class="lema">' + (cambiando
+          ? 'Las cuentas que ya abriste se quedan en su sede.<br>Lo nuevo se registra donde elijas.'
+          : 'Elegí la sede donde vas a registrar las ventas de hoy.') + '</p>' +
+        '<div style="width:100%">' +
+          lista.map(function (s) {
+            var esta = actual && actual.id === s.id;
+            return '<button class="sede-opcion' + (esta ? ' on' : '') + '" data-sede="' + s.id + '">' +
+              '<span class="sede-opcion__ini">' + esc(iniciales(s.nombre)) + '</span>' +
+              '<span class="sede-opcion__txt">' + esc(s.nombre) +
+                (esta ? '<small>sede actual de este celular</small>' : '') + '</span>' +
+            '</button>';
+          }).join('') +
+        '</div>' +
+        (cambiando ? '<button class="btn btn--fantasma btn--chico mt-lg" id="bVolver">Cancelar</button>' : '') +
+      '</div>';
+
+    $$('[data-sede]').forEach(function (b) {
+      b.onclick = function () {
+        S.fijarSede(b.dataset.sede);
+        montarApp();
+        toast('Registrando en ' + S.nombreSede(b.dataset.sede));
+      };
+    });
+
+    if ($('#bVolver')) $('#bVolver').onclick = montarApp;
+  }
+
+  /* =========================================================
      ARMADO GENERAL
      ========================================================= */
 
   function arrancarApp() {
     S.sembrar();
+    if (!S.sedeActual()) return pantallaSede(false);
+    montarApp();
+  }
+
+  function montarApp() {
+    modo = 'app';
     document.body.innerHTML =
       '<div id="app">' +
         '<header class="cabecera"></header>' +
@@ -206,7 +275,9 @@
 
   function renderCabecera() {
     var h = $('.cabecera');
-    var abiertas = S.cuentasAbiertas().filter(function (c) { return S.saldoCuenta(c.id) > 0; });
+    var sede = S.sedeActual();
+    var abiertas = S.cuentasAbiertas(sede && sede.id)
+      .filter(function (c) { return S.saldoCuenta(c.id) > 0; });
     var porCobrar = abiertas.reduce(function (s, c) { return s + S.saldoCuenta(c.id); }, 0);
 
     if (vista.pantalla === 'cuenta') {
@@ -221,13 +292,18 @@
 
     h.innerHTML =
       '<img class="cabecera__logo" src="assets/logo.jpg" alt="NOVA">' +
-      '<div class="cabecera__txt"><h1>NOVA POS</h1>' +
-      '<p>' + (C.configurado()
-        ? esc(NOVA.sesion.nombre()) + ' · ' + (NOVA.sesion.esDueno() ? 'Dueño' : 'Ayudante')
-        : 'Solo este celular') +
-        (porCobrar > 0 ? ' · por cobrar ' + S.money(porCobrar) : '') +
-      '</p></div>' +
+      '<div class="cabecera__txt">' +
+        '<h1>' + esc(sede ? sede.nombre : 'NOVA POS') + '</h1>' +
+        '<p>' + (C.configurado()
+          ? esc(NOVA.sesion.nombre()) + ' · ' + (NOVA.sesion.esDueno() ? 'Dueño' : 'Ayudante')
+          : 'Solo este celular') +
+          (porCobrar > 0 ? ' · por cobrar ' + S.money(porCobrar) : '') +
+        '</p>' +
+      '</div>' +
+      '<button class="chip-sede" id="bSede" title="Cambiar de sede">Cambiar</button>' +
       badgeSync();
+
+    $('#bSede').onclick = pedirCambioDeSede;
   }
 
   function badgeSync() {
@@ -240,7 +316,9 @@
 
   function renderNav() {
     var n = $('#nav');
-    var pendientes = S.cuentasAbiertas().filter(function (c) { return S.saldoCuenta(c.id) > 0; }).length;
+    var sedeNav = S.sedeActual();
+    var pendientes = S.cuentasAbiertas(sedeNav && sedeNav.id)
+      .filter(function (c) { return S.saldoCuenta(c.id) > 0; }).length;
     var activa = vista.pantalla === 'cuenta' ? 'cuentas' : vista.pantalla;
 
     n.innerHTML = pestanas().map(function (t) {
@@ -259,19 +337,39 @@
     });
   }
 
+  /* Cambiar de sede no se hace de un toque: registrar media noche en el local
+   * equivocado obliga a rehacer cuentas e inventario a mano.
+   */
+  function pedirCambioDeSede() {
+    var sede = S.sedeActual();
+    var abiertas = sede ? S.cuentasAbiertas(sede.id).length : 0;
+
+    confirmar('¿Cambiar de sede?',
+      'Estás registrando en ' + (sede ? sede.nombre : 'ninguna sede') + '. ' +
+      (abiertas
+        ? 'Hay ' + plural(abiertas, 'cuenta abierta', 'cuentas abiertas') +
+          ' que se quedan en esta sede; solo lo nuevo se registra en la otra.'
+        : 'Lo que registres a partir de ahora va a la sede que elijas.'),
+      'Elegir otra sede')
+      .then(function (ok) { if (ok) pantallaSede(true); });
+  }
+
   /* =========================================================
      CUENTAS
      ========================================================= */
 
   function pantallaCuentas(m) {
-    var abiertas = S.cuentasAbiertas();
+    var sede = S.sedeActual();
+    var sedeId = sede && sede.id;
+    var abiertas = S.cuentasAbiertas(sedeId);
     var hoy = S.diaNegocio();
 
     if (!abiertas.length) {
       m.innerHTML =
         '<div class="vacio mt-lg"><span class="emoji">🛸</span>' +
         '<strong>No hay cuentas abiertas</strong>' +
-        '<p>Tocá <b>Nueva cuenta</b> y escribí el nombre<br>de quien está pidiendo.</p></div>';
+        '<p>Tocá <b>Nueva cuenta</b> y escribí el nombre<br>de quien está pidiendo.</p>' +
+        '<p class="chico mt">Registrando en <b>' + esc(sede ? sede.nombre : '—') + '</b></p></div>';
     } else {
       var conSaldo = abiertas.filter(function (c) { return S.saldoCuenta(c.id) > 0; });
       var enCero = abiertas.filter(function (c) { return S.saldoCuenta(c.id) <= 0; });
@@ -283,7 +381,7 @@
           enCero.map(filaCuenta).join('') : '');
     }
 
-    var cerradas = S.cuentasCerradas(hoy);
+    var cerradas = S.cuentasCerradas(hoy, sedeId);
     if (cerradas.length) {
       m.innerHTML +=
         '<div class="titulo-seccion">Cerradas hoy (' + cerradas.length + ')</div>' +
@@ -714,84 +812,116 @@
 
   function pantallaInventario(m) {
     if (!NOVA.sesion.esDueno()) {
-      m.innerHTML = '<div class="vacio"><span class="emoji">🔒</span><strong>Sección del dueño</strong>' +
+      m.innerHTML = '<div class="vacio"><span class="emoji">&#128274;</span><strong>Secci\u00f3n del due\u00f1o</strong>' +
         '<p>Tu usuario no tiene acceso al inventario.</p></div>';
       return;
     }
 
-    var inv = S.inventario();
-    var alertas = S.alertasStock();
-    var res = S.resumen();
+    var sedes = S.sedesActivas();
+    var actual = S.sedeActual();
+    var sedeId = vista.sedeInv || (actual && actual.id) || (sedes[0] && sedes[0].id);
+    if (!sedeId) {
+      m.innerHTML = '<div class="vacio"><span class="emoji">&#127978;</span><strong>Todav\u00eda no hay sedes</strong></div>';
+      return;
+    }
+
+    var inv = S.inventario(sedeId);
+    var alertas = S.alertasStock(sedeId);
+    var res = S.resumen(S.diaNegocio(), sedeId);
 
     var html = '';
 
+    // Con varias sedes, lo primero es dejar clar\u00edsimo cu\u00e1l se est\u00e1 mirando.
+    if (sedes.length > 1) {
+      html += '<div class="pestanas-sede">' + sedes.map(function (sd) {
+        return '<button data-vsede="' + sd.id + '"' + (sd.id === sedeId ? ' class="on"' : '') + '>' +
+          esc(sd.nombre) + '</button>';
+      }).join('') + '</div>';
+    }
+
     if (alertas.length) {
-      html += '<div class="aviso aviso--error">⚠ Se está acabando: ' +
+      html += '<div class="aviso aviso--error">&#9888; Se est\u00e1 acabando en ' + esc(S.nombreSede(sedeId)) + ': ' +
         alertas.map(function (i) {
           return esc(S.etiquetaVaso(i.tipo, i.oz)) + ' (' + (i.stock || 0) + ')';
-        }).join(' · ') + '</div>';
+        }).join(' \u00b7 ') + '</div>';
     }
 
     ['icopor', 'plastico'].forEach(function (tipo) {
       var lista = inv.filter(function (i) { return i.tipo === tipo; });
       if (!lista.length) return;
       html += '<div class="titulo-seccion">' +
-        (tipo === 'icopor' ? 'Vasos de icopor' : 'Vaso plástico · micheladas') + '</div>' +
+        (tipo === 'icopor' ? 'Vasos de icopor' : 'Vaso pl\u00e1stico \u00b7 micheladas') + '</div>' +
         '<div class="tarjeta">' + lista.map(function (i) {
-          var s = i.stock || 0, min = i.minimo || 0;
-          var clase = s <= min ? 'bajo' : (s <= min * 2 ? 'medio' : 'ok');
+          var st = i.stock || 0, min = i.minimo || 0;
+          var clase = st <= min ? 'bajo' : (st <= min * 2 ? 'medio' : 'ok');
           var uso = res.vasosUsados[S.claveVaso(i.tipo, i.oz)];
           var usados = uso ? uso.cant : 0;
           return '<div class="stock">' +
             '<div class="stock__oz">' + (S.normOz(i.oz) === null
-              ? '<span style="font-size:11px;letter-spacing:.5px">ÚNICO</span>'
+              ? '<span style="font-size:11px;letter-spacing:.5px">\u00daNICO</span>'
               : S.normOz(i.oz) + ' oz') + '</div>' +
             '<div class="stock__cuerpo">' +
-              '<div class="stock__cant ' + clase + '">' + s + ' <span style="font-size:12px;font-weight:600;color:var(--texto-3)">en stock</span></div>' +
-              '<div class="stock__nota">Alerta bajo ' + min + (usados ? ' · hoy salieron ' + usados : '') + '</div>' +
+              '<div class="stock__cant ' + clase + '">' + st +
+                ' <span style="font-size:12px;font-weight:600;color:var(--texto-3)">en stock</span></div>' +
+              '<div class="stock__nota">Alerta bajo ' + min + (usados ? ' \u00b7 hoy salieron ' + usados : '') + '</div>' +
             '</div>' +
             '<button class="btn btn--chico" data-inv="' + i.id + '">Mover</button>' +
           '</div>';
         }).join('') + '</div>';
     });
 
+    if (sedes.length > 1) {
+      html += '<button class="btn btn--fantasma btn--bloque btn--chico" id="bTraslado">' +
+        'Trasladar vasos a otra sede</button>';
+    }
+
     html += '<div class="titulo-seccion">Movimientos de hoy</div>';
-    var movs = S.movimientosDe(S.diaNegocio());
+    var movs = S.movimientosDe(S.diaNegocio(), sedeId);
     html += movs.length
       ? '<div class="tarjeta"><ul class="lista-simple">' + movs.slice(0, 40).map(function (mv) {
           var signo = mv.delta > 0 ? '+' : '';
           var color = mv.delta > 0 ? 'var(--lima)' : 'var(--texto-2)';
           return '<li><span>' + esc(S.etiquetaVaso(mv.tipo_vaso, mv.oz)) +
-            '<br><span class="chico">' + esc(mv.motivo) + (mv.nota ? ' · ' + esc(mv.nota) : '') + ' · ' + hora(mv.created_at) + '</span></span>' +
+            '<br><span class="chico">' + esc(mv.motivo) + (mv.nota ? ' \u00b7 ' + esc(mv.nota) : '') +
+            ' \u00b7 ' + hora(mv.created_at) + '</span></span>' +
             '<b style="color:' + color + '">' + signo + mv.delta + '</b></li>';
         }).join('') + '</ul></div>'
-      : '<div class="tarjeta chico centro">Todavía no hay movimientos hoy.</div>';
+      : '<div class="tarjeta chico centro">Todav\u00eda no hay movimientos hoy en esta sede.</div>';
 
     m.innerHTML = html;
+
+    $$('[data-vsede]', m).forEach(function (b) {
+      b.onclick = function () { vista.sedeInv = b.dataset.vsede; render(); };
+    });
 
     $$('[data-inv]', m).forEach(function (b) {
       b.onclick = function () { hojaMoverStock(S.buscar('inventario', b.dataset.inv)); };
     });
+
+    if ($('#bTraslado')) $('#bTraslado').onclick = function () { hojaTraslado(sedeId); };
   }
 
   function hojaMoverStock(i) {
     var nombre = S.etiquetaVaso(i.tipo, i.oz);
+    var enSede = S.nombreSede(i.sede_id);
+
     abrirHoja(
-      '<h2>' + esc(nombre) + '</h2><p class="sub">Hay ' + (i.stock || 0) + ' en stock.</p>' +
+      '<h2>' + esc(nombre) + '</h2>' +
+      '<p class="sub">' + esc(enSede) + ' \u00b7 hay ' + (i.stock || 0) + ' en stock.</p>' +
       '<div class="campo"><label>Entrada por compra</label>' +
         '<div style="display:flex;gap:8px">' +
-          '<input id="mEnt" type="number" inputmode="numeric" min="1" placeholder="Cuántos llegaron">' +
+          '<input id="mEnt" type="number" inputmode="numeric" min="1" placeholder="Cu\u00e1ntos llegaron">' +
           '<button class="btn btn--exito" id="bEnt" style="flex:none;padding:0 18px">Sumar</button>' +
         '</div></div>' +
-      '<div class="campo"><label>Conteo físico (corrige el total)</label>' +
+      '<div class="campo"><label>Conteo f\u00edsico (corrige el total)</label>' +
         '<div style="display:flex;gap:8px">' +
-          '<input id="mCon" type="number" inputmode="numeric" min="0" placeholder="Cuántos contaste">' +
+          '<input id="mCon" type="number" inputmode="numeric" min="0" placeholder="Cu\u00e1ntos contaste">' +
           '<button class="btn" id="bCon" style="flex:none;padding:0 18px">Fijar</button>' +
         '</div>' +
-        '<div class="ayuda">Usalo cuando el número de la app no coincide con lo que ves.</div></div>' +
-      '<div class="campo"><label>Dañados o perdidos</label>' +
+        '<div class="ayuda">Usalo cuando el n\u00famero de la app no coincide con lo que ves.</div></div>' +
+      '<div class="campo"><label>Da\u00f1ados o perdidos</label>' +
         '<div style="display:flex;gap:8px">' +
-          '<input id="mMer" type="number" inputmode="numeric" min="1" placeholder="Cuántos">' +
+          '<input id="mMer" type="number" inputmode="numeric" min="1" placeholder="Cu\u00e1ntos">' +
           '<button class="btn btn--peligro" id="bMer" style="flex:none;padding:0 18px">Restar</button>' +
         '</div></div>' +
       '<div class="campo"><label>Avisarme cuando queden menos de</label>' +
@@ -800,26 +930,72 @@
       function (h) {
         $('#bEnt', h).onclick = function () {
           var n = Number($('#mEnt', h).value) || 0;
-          if (n <= 0) return toast('Escribí cuántos llegaron');
-          S.registrarEntrada(i.tipo, i.oz, n, 'Compra');
-          cerrarHoja(); toast('+' + n + ' ' + nombre);
+          if (n <= 0) return toast('Escrib\u00ed cu\u00e1ntos llegaron');
+          S.registrarEntrada(i.sede_id, i.tipo, i.oz, n, 'Compra');
+          cerrarHoja(); toast('+' + n + ' ' + nombre + ' en ' + enSede);
         };
         $('#bCon', h).onclick = function () {
           var v = $('#mCon', h).value;
-          if (v === '') return toast('Escribí cuántos contaste');
-          S.ajustarStock(i.tipo, i.oz, Number(v), 'Conteo físico');
+          if (v === '') return toast('Escrib\u00ed cu\u00e1ntos contaste');
+          S.ajustarStock(i.sede_id, i.tipo, i.oz, Number(v), 'Conteo f\u00edsico');
           cerrarHoja(); toast('Stock ajustado a ' + v);
         };
         $('#bMer', h).onclick = function () {
           var n = Number($('#mMer', h).value) || 0;
-          if (n <= 0) return toast('Escribí cuántos');
-          S.registrarMerma(i.tipo, i.oz, n, 'Dañados o perdidos');
-          cerrarHoja(); toast('−' + n + ' por merma');
+          if (n <= 0) return toast('Escrib\u00ed cu\u00e1ntos');
+          S.registrarMerma(i.sede_id, i.tipo, i.oz, n, 'Da\u00f1ados o perdidos');
+          cerrarHoja(); toast('\u2212' + n + ' por merma');
         };
         $('#bCerrarH', h).onclick = function () {
           var min = Number($('#mMin', h).value);
           if (min !== (i.minimo || 0)) S.fijarMinimo(i.id, min);
           cerrarHoja();
+        };
+      }
+    );
+  }
+
+  /* Mover vasos de un local al otro en un solo gesto: si se hiciera con una
+   * merma ac\u00e1 y una entrada all\u00e1, cualquier olvido descuadra las dos sedes.
+   */
+  function hojaTraslado(desdeSede) {
+    var otras = S.sedesActivas().filter(function (s) { return s.id !== desdeSede; });
+    if (!otras.length) return toast('No hay otra sede');
+
+    var inv = S.inventario(desdeSede).filter(function (i) { return (i.stock || 0) > 0; });
+    if (!inv.length) return toast('No hay vasos para trasladar en esta sede');
+
+    abrirHoja(
+      '<h2>Trasladar vasos</h2>' +
+      '<p class="sub">Salen de ' + esc(S.nombreSede(desdeSede)) + ' y entran a la otra sede. ' +
+      'Queda registrado en las dos.</p>' +
+      '<div class="campo"><label>Hacia</label><select id="tHacia">' +
+        otras.map(function (s) { return '<option value="' + s.id + '">' + esc(s.nombre) + '</option>'; }).join('') +
+      '</select></div>' +
+      '<div class="campo"><label>Qu\u00e9 vaso</label><select id="tVaso">' +
+        inv.map(function (i) {
+          return '<option value="' + i.id + '">' + esc(S.etiquetaVaso(i.tipo, i.oz)) +
+            ' \u2014 hay ' + i.stock + '</option>';
+        }).join('') +
+      '</select></div>' +
+      '<div class="campo"><label>Cu\u00e1ntos</label>' +
+        '<input id="tCant" type="number" inputmode="numeric" min="1" placeholder="Cantidad"></div>' +
+      '<div id="tAviso"></div>' +
+      '<button class="btn btn--primario btn--bloque" id="bTras">Trasladar</button>',
+      function (h) {
+        $('#bTras', h).onclick = function () {
+          var fila = S.buscar('inventario', $('#tVaso', h).value);
+          var n = Number($('#tCant', h).value) || 0;
+          if (!fila || n <= 0) return toast('Escrib\u00ed la cantidad');
+          if (n > (fila.stock || 0)) {
+            $('#tAviso', h).innerHTML = '<div class="aviso aviso--error">Solo hay ' +
+              fila.stock + ' en ' + esc(S.nombreSede(desdeSede)) + '.</div>';
+            return;
+          }
+          var hacia = $('#tHacia', h).value;
+          S.trasladarVasos(desdeSede, hacia, fila.tipo, fila.oz, n);
+          cerrarHoja();
+          toast(n + ' ' + S.etiquetaVaso(fila.tipo, fila.oz) + ' \u2192 ' + S.nombreSede(hacia));
         };
       }
     );
@@ -832,14 +1008,21 @@
   function pantallaResumen(m) {
     var dueno = NOVA.sesion.esDueno();
     var fechas = S.fechasConMovimiento();
-    // El ayudante siempre mira el turno de hoy; el historial es solo del dueño.
+    var sedeAqui = S.sedeActual();
+    var sedes = S.sedesActivas();
+
+    // El ayudante siempre mira el turno de hoy en la sede donde está parado.
     var f = S.diaNegocio();
+    var sedeId = sedeAqui && sedeAqui.id;
     if (dueno) {
       f = vista.fechaResumen || f;
       if (fechas.indexOf(f) === -1) f = fechas[0] || S.diaNegocio();
+      sedeId = vista.sedeResumen;   // null = todas las sedes
     }
-    var r = S.resumen(f);
+
+    var r = S.resumen(f, sedeId);
     var esHoy = f === S.diaNegocio();
+    var rotuloSede = sedeId ? S.nombreSede(sedeId) : 'Todas las sedes';
 
     var html = '';
 
@@ -849,8 +1032,19 @@
           return '<option value="' + x + '"' + (x === f ? ' selected' : '') + '>' +
             (x === S.diaNegocio() ? 'Hoy · ' : '') + fechaLarga(x) + '</option>';
         }).join('') + '</select></div>';
+
+      if (sedes.length > 1) {
+        html += '<div class="pestanas-sede">' +
+          '<button data-rsede=""' + (!sedeId ? ' class="on"' : '') + '>Todas</button>' +
+          sedes.map(function (sd) {
+            return '<button data-rsede="' + sd.id + '"' + (sd.id === sedeId ? ' class="on"' : '') + '>' +
+              esc(sd.nombre.replace(/^Sede\s+/i, '')) + '</button>';
+          }).join('') + '</div>';
+      }
     } else {
-      html += '<div class="titulo-seccion">' + (esHoy ? 'Mi turno de hoy' : fechaLarga(f)) + '</div>';
+      html += '<div class="titulo-seccion">' +
+        (esHoy ? 'Mi turno de hoy' : fechaLarga(f)) +
+        (sedeAqui ? ' · ' + esc(sedeAqui.nombre) : '') + '</div>';
     }
 
     html += '<div class="metricas">' +
@@ -873,7 +1067,7 @@
 
     // Lo que está pasando ahora mismo, incluido lo que vende el ayudante
     // desde su celular: llega por realtime y repinta esta lista sola.
-    var eventos = S.actividad(f, 18);
+    var eventos = S.actividad(f, 18, sedeId);
     if (eventos.length) {
       html += '<div class="titulo-seccion">' +
         (esHoy ? '<span class="vivo"></span> Pasando ahora' : 'Movimiento del día') + '</div>' +
@@ -883,12 +1077,25 @@
             '<div class="evento__cuerpo">' +
               '<div class="item__nombre">' + esc(e.cliente) + '</div>' +
               '<div class="item__meta">' + esc(e.detalle) +
-                (e.quien ? ' · ' + esc(e.quien) : '') + '</div>' +
+                (e.quien ? ' · ' + esc(e.quien) : '') +
+                (!sedeId && e.sede ? ' · ' + esc(e.sede) : '') + '</div>' +
             '</div>' +
             '<div class="item__total" style="color:' +
               (e.tipo === 'pago' ? 'var(--lima)' : 'var(--texto-2)') + '">' +
               (e.tipo === 'pago' ? '+' : '') + S.money(e.monto) + '</div>' +
           '</div>';
+        }).join('') + '</div>';
+    }
+
+    if (dueno && !sedeId && r.porSede.length > 1) {
+      var maxSede = Math.max.apply(null, r.porSede.map(function (x) { return x.recaudado; })) || 1;
+      html += '<div class="titulo-seccion">Cómo le fue a cada sede</div><div class="tarjeta">' +
+        r.porSede.map(function (x) {
+          return '<div class="barra"><div class="barra__top"><b>' + esc(x.nombre) + '</b>' +
+            '<span>' + S.money(x.recaudado) + ' recaudado</span></div>' +
+            '<div class="barra__riel"><div class="barra__val" style="width:' +
+              Math.max(6, x.recaudado / maxSede * 100) + '%"></div></div>' +
+            '<div class="chico" style="margin-top:3px">Vendido ' + S.money(x.vendido) + '</div></div>';
         }).join('') + '</div>';
     }
 
@@ -942,7 +1149,8 @@
     }
 
     if (dueno) {
-      html += '<button class="btn btn--fantasma btn--bloque mt" id="bCSV">Descargar este día en Excel (CSV)</button>';
+      html += '<button class="btn btn--fantasma btn--bloque mt" id="bCSV">' +
+        'Descargar en Excel · ' + esc(rotuloSede) + '</button>';
     }
 
     if (r.recaudado === 0 && r.vendido === 0) {
@@ -956,20 +1164,29 @@
     if ($('#selFecha')) {
       $('#selFecha').onchange = function () { vista.fechaResumen = this.value; render(); };
     }
-    if ($('#bCSV')) $('#bCSV').onclick = function () { descargarCSV(f); };
+    $$('[data-rsede]', m).forEach(function (b) {
+      b.onclick = function () { vista.sedeResumen = b.dataset.rsede || null; render(); };
+    });
+    if ($('#bCSV')) $('#bCSV').onclick = function () { descargarCSV(f, sedeId); };
   }
 
-  function descargarCSV(fecha) {
-    var filas = [['Hora', 'Cliente', 'Producto', 'Cantidad', 'Precio unitario', 'Total', 'Vendió']];
-    S.vivos('items').filter(function (i) { return i.fecha === fecha; }).forEach(function (i) {
+  function descargarCSV(fecha, sedeId) {
+    var delTurno = function (r) {
+      return r.fecha === fecha && (!sedeId || r.sede_id === sedeId);
+    };
+
+    var filas = [['Hora', 'Sede', 'Cliente', 'Producto', 'Cantidad', 'Precio unitario', 'Total', 'Vendió']];
+    S.vivos('items').filter(delTurno).forEach(function (i) {
       var c = S.buscar('cuentas', i.cuenta_id);
-      filas.push([hora(i.created_at), c ? c.nombre : '', i.nombre, i.cantidad, i.precio, i.precio * i.cantidad, i.vendido_por || '']);
+      filas.push([hora(i.created_at), S.nombreSede(i.sede_id), c ? c.nombre : '', i.nombre,
+                  i.cantidad, i.precio, i.precio * i.cantidad, i.vendido_por || '']);
     });
     filas.push([]);
-    filas.push(['Hora', 'Cliente', 'Pago', 'Método', 'Quién pagó', 'Cobró']);
-    S.vivos('pagos').filter(function (p) { return p.fecha === fecha; }).forEach(function (p) {
+    filas.push(['Hora', 'Sede', 'Cliente', 'Pago', 'Método', 'Quién pagó', 'Cobró']);
+    S.vivos('pagos').filter(delTurno).forEach(function (p) {
       var c = S.buscar('cuentas', p.cuenta_id);
-      filas.push([hora(p.created_at), c ? c.nombre : '', p.monto, p.metodo, p.quien || '', p.cobrado_por || '']);
+      filas.push([hora(p.created_at), S.nombreSede(p.sede_id), c ? c.nombre : '',
+                  p.monto, p.metodo, p.quien || '', p.cobrado_por || '']);
     });
 
     var csv = filas.map(function (f) {
@@ -979,7 +1196,8 @@
       }).join(';');
     }).join('\r\n');
 
-    descargar('nova-ventas-' + fecha + '.csv', '﻿' + csv, 'text/csv;charset=utf-8');
+    var sufijo = sedeId ? '-' + S.nombreSede(sedeId).toLowerCase().replace(/\s+/g, '-') : '';
+    descargar('nova-ventas-' + fecha + sufijo + '.csv', '﻿' + csv, 'text/csv;charset=utf-8');
     toast('Descargado');
   }
 
@@ -1013,6 +1231,19 @@
       '</div>';
 
     if (dueno) {
+      html += '<div class="titulo-seccion">Sedes</div><div class="tarjeta"><ul class="lista-simple">' +
+        S.sedes().map(function (sd) {
+          var aqui = S.sedeActual() && S.sedeActual().id === sd.id;
+          return '<li data-sedeedit="' + sd.id + '" style="cursor:pointer">' +
+            '<span>' + esc(sd.nombre) +
+              (sd.activa === false ? ' <span class="etiqueta etiqueta--aviso">inactiva</span>' : '') +
+              '<br><span class="chico">' + (aqui ? 'este celular registra aquí' : 'toca para editar') + '</span></span>' +
+            '<b class="chico">' + S.inventario(sd.id).reduce(function (t, i) { return t + (i.stock || 0); }, 0) +
+            ' vasos</b></li>';
+        }).join('') + '</ul>' +
+        '<button class="btn btn--fantasma btn--bloque btn--chico mt" id="bNuevaSede">+ Agregar sede</button>' +
+        '</div>';
+
       html += '<div class="titulo-seccion">Productos y precios</div>' +
         '<div class="tarjeta"><ul class="lista-simple">' +
           S.productos().map(function (p) {
@@ -1073,6 +1304,10 @@
       li.onclick = function () { editarProducto(S.buscar('productos', li.dataset.prodedit)); };
     });
 
+    $$('[data-sedeedit]', m).forEach(function (li) {
+      li.onclick = function () { editarSede(S.buscar('sedes', li.dataset.sedeedit)); };
+    });
+    if ($('#bNuevaSede')) $('#bNuevaSede').onclick = function () { editarSede(null); };
     if ($('#bNuevoProd')) $('#bNuevoProd').onclick = function () { editarProducto(null); };
     if ($('#bConectar')) $('#bConectar').onclick = hojaConectar;
     if ($('#bSync')) $('#bSync').onclick = function () {
@@ -1144,6 +1379,46 @@
     }).catch(function (e) {
       if ($('#cUsuarios')) $('#cUsuarios').innerHTML = '<p class="chico mb0">No se pudo cargar: ' + esc(e.message) + '</p>';
     });
+  }
+
+  function editarSede(sd) {
+    var nueva = !sd;
+    sd = sd || { nombre: '', activa: true };
+    var esActual = !nueva && S.sedeActual() && S.sedeActual().id === sd.id;
+
+    abrirHoja(
+      '<h2>' + (nueva ? 'Nueva sede' : esc(sd.nombre)) + '</h2>' +
+      (nueva ? '<p class="sub">Arranca con el inventario en cero: después le cargás los vasos.</p>' : '') +
+      '<div class="campo"><label>Nombre</label>' +
+        '<input id="sN" value="' + esc(sd.nombre) + '" maxlength="40" placeholder="Ej: Sede Norte"></div>' +
+      (!nueva ? '<div class="campo"><label>Estado</label><select id="sA">' +
+        '<option value="1"' + (sd.activa !== false ? ' selected' : '') + '>Activa</option>' +
+        '<option value="0"' + (sd.activa === false ? ' selected' : '') + '>Inactiva (ya no se usa)</option>' +
+        '</select><div class="ayuda">Una sede inactiva deja de aparecer al elegir dónde registrar, ' +
+        'pero su historial se conserva.</div></div>' : '') +
+      '<button class="btn btn--primario btn--bloque" id="sG">Guardar</button>' +
+      (!nueva && !esActual
+        ? '<button class="btn btn--fantasma btn--bloque btn--chico mt" id="sUsar">Registrar en esta sede</button>'
+        : ''),
+      function (h) {
+        $('#sG', h).onclick = function () {
+          var nombre = $('#sN', h).value.trim();
+          if (!nombre) return toast('Ponele nombre');
+          S.guardarSede({
+            id: sd.id, nombre: nombre,
+            activa: $('#sA', h) ? $('#sA', h).value === '1' : true
+          });
+          cerrarHoja(); toast('Guardado');
+        };
+        if ($('#sUsar', h)) $('#sUsar', h).onclick = function () {
+          cerrarHoja();
+          S.fijarSede(sd.id);
+          vista.sedeInv = null;
+          toast('Registrando en ' + sd.nombre);
+          render();
+        };
+      }
+    );
   }
 
   function editarProducto(p) {
@@ -1253,7 +1528,9 @@
     repintarPendiente = true;
     requestAnimationFrame(function () {
       repintarPendiente = false;
-      if (app && document.body.contains(app)) render();
+      // La pantalla de sedes se repinta sola cuando las sedes bajan del servidor.
+      if (modo === 'sede') return pantallaSede(false);
+      if (modo === 'app' && app && document.body.contains(app)) render();
     });
   }
 

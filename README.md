@@ -9,13 +9,16 @@ Funciona como app en el celular, sin costo de licencia y sin servidor propio.
 - **Cuentas por nombre.** Como no hay mesas, cada cliente es un nombre ("Andrés", "Gorra roja"). Se ve en vivo cuánto debe cada uno.
 - **Pagos parciales.** Si abona $20.000 de $67.000, la cuenta sigue abierta con el saldo restante. Nada se borra.
 - **Dividir la cuenta.** Se marca qué vasos se lleva cada persona y la app cobra exactamente eso; el resto sigue debiéndose.
-- **Inventario de vasos.** Icopor en 8, 12, 16 y 24 oz, y el vaso plástico de las micheladas, que es uno solo y no lleva tamaño. Cada venta descuenta el vaso automáticamente, con alerta cuando se está acabando.
+- **Varias sedes.** Al abrir la app se elige dónde se está registrando. Cada sede lleva sus cuentas y su propio inventario, y se pueden comparar en el resumen.
+- **Inventario de vasos, por sede.** Icopor en 8, 12, 16 y 24 oz, y el vaso plástico de las micheladas, que es uno solo y no lleva tamaño. Cada venta descuenta el vaso de su sede, con alerta cuando se está acabando. Se pueden trasladar vasos de una sede a otra.
 - **Resumen diario.** Recaudado, por cobrar, ticket promedio, cómo pagaron, qué se vendió, cuántos vasos salieron y quién debe. Se descarga en Excel.
 - **Dos celulares en vivo.** El tuyo y el del ayudante ven las mismas cuentas al instante.
 - **Roles.** El ayudante solo vende. No ve inventario ni los totales del negocio, y no puede cambiar precios.
 - **Sin señal igual funciona.** Si se cae internet, sigue vendiendo en el celular y sincroniza cuando vuelve.
 
 El día contable corta a las **5 de la mañana**: lo que vendas a la 1 am cuenta para la noche anterior.
+
+Vienen creadas **Sede Principal** y **Sede Exterior**. Se renombran o se agregan más en Ajustes → Sedes.
 
 ---
 
@@ -29,8 +32,10 @@ Son tres partes. Calculá una hora la primera vez.
 2. **New project.** Ponele nombre `nova-pos`, elegí una contraseña de base de datos y **guardala**. Región: *East US* o *South America (São Paulo)*.
 3. Esperá unos 2 minutos a que quede listo.
 4. En el menú de la izquierda entrá a **SQL Editor** → **New query**.
-5. Abrí el archivo [`supabase/schema.sql`](supabase/schema.sql) de este proyecto, copiá **todo** el contenido, pegalo ahí y tocá **Run**.
-   Debe decir *Success*. Eso crea las tablas, los permisos y el descuento automático de vasos.
+5. Corré **en orden** los tres archivos de la carpeta `supabase/`, cada uno en su propia query, esperando *Success* entre uno y otro:
+   1. [`schema.sql`](supabase/schema.sql) — tablas, permisos y descuento automático de vasos
+   2. [`02-historial-solo-dueno.sql`](supabase/02-historial-solo-dueno.sql) — el ayudante ve solo su turno
+   3. [`03-sedes.sql`](supabase/03-sedes.sql) — varias sedes, cada una con su inventario
 6. Andá a **Authentication** → **Providers** → **Email** y **desactivá** *Confirm email*. Así los usuarios entran sin tener que confirmar el correo.
 7. Andá a **Authentication** → **Users** → **Add user** → *Create new user*.
    - Correo y contraseña **tuyos**. Este primer usuario queda como **dueño** automáticamente.
@@ -76,14 +81,17 @@ Son tres partes. Calculá una hora la primera vez.
 3. Abrí la app → **Ajustes** → **Conectar servidor**.
 4. Pegá la *Project URL* y la clave *anon public* de la Parte 1 → **Conectar**.
 5. Iniciá sesión con el correo y contraseña que creaste.
-6. Andá a **Inventario** y cargá cuántos vasos tenés de cada tamaño (**Mover** → *Entrada por compra*).
-7. Revisá **Ajustes** → **Productos**. Vienen los 8 granizados del menú y la **Michelada a $12.000**. Si vendés algo más, lo agregás ahí.
+6. La app te pregunta **en qué sede** vas a registrar. Elegí la que corresponda.
+7. Andá a **Inventario** y cargá cuántos vasos tenés **en esa sede** (**Mover** → *Entrada por compra*). Arriba cambiás de sede para cargar la otra.
+8. Revisá **Ajustes** → **Productos**. Vienen los 8 granizados del menú y la **Michelada a $12.000**. Si vendés algo más, lo agregás ahí.
+9. En **Ajustes** → **Sedes** podés renombrarlas o agregar otra.
 
 **En el del ayudante:**
 
 1. Primero creale el usuario: Supabase → **Authentication** → **Users** → **Add user**, con su correo y una contraseña.
    Entra como **ayudante** automáticamente.
 2. En su celular: mismo link, agregar a pantalla de inicio, **Conectar servidor** con los mismos dos datos, e inicia sesión con **su** usuario.
+   Al entrar elegí **la sede donde va a trabajar**: eso define dónde se registran sus ventas y de qué inventario se descuenta.
 3. Él va a ver solo **Cuentas**, **Mi turno** y **Ajustes**. Nada de inventario ni de precios,
    y del historial solo el turno en el que está trabajando.
 
@@ -110,6 +118,7 @@ Modificar la app en su teléfono no le sirve de nada: los permisos viven en el s
 
 | Situación | Qué hacer |
 |---|---|
+| Abrís el turno | La app pregunta la sede; verificá que sea la correcta |
 | Llega un cliente | **Nueva cuenta** → su nombre |
 | Pide otro vaso | Abrí su cuenta → tocá el tamaño |
 | Se equivocaron de pedido | En la línea, tocá **−** |
@@ -120,8 +129,13 @@ Modificar la app en su teléfono no le sirve de nada: los permisos viven en el s
 | Cierre de la noche | **Resumen** → mirá recaudado y quién quedó debiendo |
 | Llegaron vasos nuevos | **Inventario** → **Mover** → *Entrada por compra* |
 | El conteo no cuadra | **Inventario** → **Mover** → *Conteo físico* |
+| Llevás vasos a la otra sede | **Inventario** → *Trasladar vasos a otra sede* |
+| Comparar las dos sedes | **Resumen** → pestaña **Todas** |
+| Te movés de local | Tocá **Cambiar** arriba a la derecha |
 
 Cuando el saldo llega a cero, la cuenta se cierra sola.
+
+Una cuenta se queda en la sede donde se abrió. Si cambiás el celular de sede, lo que le agregues a esa cuenta sigue descontando del inventario de su sede original — no del local donde estás parado.
 
 ---
 
@@ -145,7 +159,8 @@ js/cloud.js             sesión y sincronización con Supabase
 js/ui.js                pantallas
 sw.js                   caché para trabajar sin señal
 supabase/schema.sql     tablas, permisos y descuento de vasos
-supabase/02-*.sql       cambios posteriores al esquema
+supabase/02-*.sql       el ayudante ve solo su turno
+supabase/03-sedes.sql   varias sedes con inventario propio
 ```
 
 Sin build ni dependencias: son archivos que el navegador abre directamente.
