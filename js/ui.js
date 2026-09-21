@@ -347,8 +347,9 @@
     confirmar('¿Cambiar de sede?',
       'Estás registrando en ' + (sede ? sede.nombre : 'ninguna sede') + '. ' +
       (abiertas
-        ? 'Hay ' + plural(abiertas, 'cuenta abierta', 'cuentas abiertas') +
-          ' que se quedan en esta sede; solo lo nuevo se registra en la otra.'
+        ? 'Hay ' + plural(abiertas, 'cuenta abierta', 'cuentas abiertas') + ': ' +
+          (abiertas === 1 ? 'se queda' : 'se quedan') +
+          ' en esta sede y solo lo nuevo se registra en la otra.'
         : 'Lo que registres a partir de ahora va a la sede que elijas.'),
       'Elegir otra sede')
       .then(function (ok) { if (ok) pantallaSede(true); });
