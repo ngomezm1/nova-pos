@@ -665,6 +665,31 @@
     return TABLAS.some(function (t) { return sucios(t).length > 0; });
   }
 
+  /* En el celular del ayudante no debe quedar historial. El servidor ya deja de
+   * entregárselo, pero lo que bajó cuando era "hoy" sigue en su teléfono: esto
+   * lo borra. Se conserva lo del turno actual, las cuentas que sigan abiertas
+   * (tiene que poder cobrarlas) y lo que todavía no se haya subido.
+   */
+  function purgarHistorial() {
+    var hoy = diaNegocio();
+    var cuentasVivas = {};
+
+    state.cuentas = (state.cuentas || []).filter(function (c) {
+      var delTurno = (c.fecha || '') >= hoy || c.estado === 'abierta';
+      if (delTurno || c._dirty) { cuentasVivas[c.id] = true; return true; }
+      return false;
+    });
+
+    ['items', 'pagos'].forEach(function (t) {
+      state[t] = (state[t] || []).filter(function (r) {
+        return r._dirty || (r.fecha || '') >= hoy || cuentasVivas[r.cuenta_id];
+      });
+    });
+
+    ['cuentas', 'items', 'pagos'].forEach(guardarTabla);
+    emitir();
+  }
+
   // Al cerrar sesión un ayudante no debe dejar datos del negocio en ese celular.
   function limpiarTodo() {
     TABLAS.forEach(function (t) {
@@ -708,7 +733,8 @@
     totalCuenta: totalCuenta, pagadoCuenta: pagadoCuenta, saldoCuenta: saldoCuenta,
 
     resumen: resumen, actividad: actividad, fechasConMovimiento: fechasConMovimiento,
-    exportar: exportar, importar: importar, limpiarTodo: limpiarTodo,
+    exportar: exportar, importar: importar,
+    limpiarTodo: limpiarTodo, purgarHistorial: purgarHistorial,
 
     sucios: sucios, limpiarSucios: limpiarSucios, aplicarRemotos: aplicarRemotos,
     hayPendientesDeSync: hayPendientesDeSync

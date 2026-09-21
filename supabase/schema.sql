@@ -324,25 +324,77 @@ create policy productos_editar on public.productos
   for all to authenticated
   using (public.es_dueno()) with check (public.es_dueno());
 
--- cuentas / items / pagos: el trabajo diario. Ayudante y dueño por igual.
--- No se borra físicamente nada: se marca deleted, así queda rastro.
+-- cuentas / items / pagos: el trabajo diario.
+--
+-- El dueño ve todo el historial. El ayudante ve solo el turno en el que está:
+-- lo de hoy, más cualquier cuenta que siga abierta aunque sea de otro día,
+-- porque sin eso no podría cobrarle a quien quedó debiendo.
+-- Lo de ayer, ya cerrado, para él deja de existir.
+
+-- El día de negocio lo define el servidor, no el celular: corta a las 5 am
+-- hora de Colombia, igual que en la app.
+create or replace function public.dia_negocio()
+returns date
+language sql
+stable
+as $$
+  select (((now() at time zone 'America/Bogota') - interval '5 hours')::date);
+$$;
+
+-- Un ítem o un pago se ve si su cuenta se ve. Va como SECURITY DEFINER para
+-- que la consulta a cuentas no vuelva a pasar por las políticas de cuentas.
+create or replace function public.cuenta_del_turno(p_cuenta uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.cuentas c
+     where c.id = p_cuenta
+       and (c.fecha >= public.dia_negocio() or c.estado = 'abierta')
+  );
+$$;
+
+create policy cuentas_ver on public.cuentas
+  for select to authenticated
+  using (public.es_dueno() or fecha >= public.dia_negocio() or estado = 'abierta');
+
+create policy cuentas_crear on public.cuentas
+  for insert to authenticated with check (true);
+
+create policy cuentas_editar on public.cuentas
+  for update to authenticated
+  using (public.es_dueno() or fecha >= public.dia_negocio() or estado = 'abierta')
+  with check (true);
+
 do $$
 declare t text;
 begin
-  foreach t in array array['cuentas','items','pagos']
+  foreach t in array array['items','pagos']
   loop
     execute format(
-      'create policy %I on public.%I for select to authenticated using (true)',
+      'create policy %I on public.%I for select to authenticated
+       using (public.es_dueno() or fecha >= public.dia_negocio()
+              or public.cuenta_del_turno(cuenta_id))',
       t || '_ver', t);
+
     execute format(
       'create policy %I on public.%I for insert to authenticated with check (true)',
       t || '_crear', t);
+
     execute format(
-      'create policy %I on public.%I for update to authenticated using (true) with check (true)',
+      'create policy %I on public.%I for update to authenticated
+       using (public.es_dueno() or fecha >= public.dia_negocio()
+              or public.cuenta_del_turno(cuenta_id))
+       with check (true)',
       t || '_editar', t);
-    -- Nadie borra con DELETE: sin política de delete, queda prohibido.
   end loop;
 end $$;
+
+-- Nadie borra con DELETE: al no existir política de delete, queda prohibido
+-- para todos. Las anulaciones marcan deleted y dejan rastro.
 
 -- inventario y movimientos: EXCLUSIVOS del dueño.
 -- Sin política que los habilite, el ayudante ni siquiera los ve existir:

@@ -84,7 +84,8 @@ Son tres partes. Calculá una hora la primera vez.
 1. Primero creale el usuario: Supabase → **Authentication** → **Users** → **Add user**, con su correo y una contraseña.
    Entra como **ayudante** automáticamente.
 2. En su celular: mismo link, agregar a pantalla de inicio, **Conectar servidor** con los mismos dos datos, e inicia sesión con **su** usuario.
-3. Él va a ver solo **Cuentas**, **Mi turno** y **Ajustes**. Nada de inventario ni de precios.
+3. Él va a ver solo **Cuentas**, **Mi turno** y **Ajustes**. Nada de inventario ni de precios,
+   y del historial solo el turno en el que está trabajando.
 
 ---
 
@@ -95,6 +96,9 @@ No es una pantalla escondida: es el servidor el que decide.
 - Sus permisos no le alcanzan para leer `inventario` ni `movimientos`. Si intentara consultarlos, la base de datos le devuelve cero filas.
 - Tampoco puede crear ni cambiar productos, así que no puede tocar precios.
 - **Las ventas sí descuentan vasos**, porque el descuento lo hace un *trigger* dentro de la base de datos, no su celular.
+- **El historial es solo tuyo.** Él ve lo de hoy y las cuentas que sigan abiertas de otros días
+  (para poder cobrarlas). Lo de días anteriores ya cerrado no le llega, y lo que bajó cuando
+  era "hoy" se borra de su celular al día siguiente.
 - Nadie puede borrar cuentas, ítems ni pagos: se marcan como anulados y queda el rastro.
 - Cuando cierra sesión, los datos del negocio se borran de ese celular.
 
@@ -141,6 +145,7 @@ js/cloud.js             sesión y sincronización con Supabase
 js/ui.js                pantallas
 sw.js                   caché para trabajar sin señal
 supabase/schema.sql     tablas, permisos y descuento de vasos
+supabase/02-*.sql       cambios posteriores al esquema
 ```
 
 Sin build ni dependencias: son archivos que el navegador abre directamente.

@@ -254,7 +254,12 @@
           });
       });
     }, Promise.resolve())
-      .then(function () { if (estado !== 'conectado') setEstado('conectado'); })
+      .then(function () {
+        // El ayudante no guarda historial: lo de días pasados se borra de su
+        // celular apenas termina de bajar lo nuevo.
+        if (!esDueno()) NOVA.store.purgarHistorial();
+        if (estado !== 'conectado') setEstado('conectado');
+      })
       .catch(function (e) { setEstado('offline', e.message); });
   }
 

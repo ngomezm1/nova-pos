@@ -832,8 +832,12 @@
   function pantallaResumen(m) {
     var dueno = NOVA.sesion.esDueno();
     var fechas = S.fechasConMovimiento();
-    var f = vista.fechaResumen || S.diaNegocio();
-    if (fechas.indexOf(f) === -1) f = fechas[0] || S.diaNegocio();
+    // El ayudante siempre mira el turno de hoy; el historial es solo del dueño.
+    var f = S.diaNegocio();
+    if (dueno) {
+      f = vista.fechaResumen || f;
+      if (fechas.indexOf(f) === -1) f = fechas[0] || S.diaNegocio();
+    }
     var r = S.resumen(f);
     var esHoy = f === S.diaNegocio();
 
