@@ -181,8 +181,8 @@ y = paso(c, 2, y - 18, 'Tocá el botón Compartir',
          'Si no ves la barra, deslizá un poco hacia arriba en la página.')
 
 y = paso(c, 3, y - 18, 'Añadir a pantalla de inicio',
-         'Se abre una lista: deslizá hacia ARRIBA dentro de esa lista hasta encontrar la opción. '
-         'No aparece de primeras. Si sale "Abrir como app web", dejalo activado. '
+         'Buscá el cuadrito con un + adentro. Si no lo ves, deslizá hacia arriba dentro de la lista. '
+         'Si sale "Abrir como app web", dejalo activado. '
          'Después tocá Añadir, arriba a la derecha.')
 
 y = paso(c, 4, y - 18, 'Abrí la app desde el ícono nuevo',
