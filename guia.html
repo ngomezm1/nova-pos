@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="es-CO">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cómo instalar NOVA POS</title>
+<meta name="description" content="Guía para instalar la app de NOVA en el celular y entrar con tu usuario.">
+<meta name="theme-color" content="#06021a">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="icon" href="assets/icon-192.png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;800;900&family=Outfit:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="css/style.css">
+
+<style>
+  /* La guía se lee de corrido, no es una app: cabe en una hoja larga. */
+  .guia {
+    position: relative;
+    z-index: 1;
+    max-width: 620px;
+    margin: 0 auto;
+    padding: 28px 18px calc(48px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .guia__top { text-align: center; margin-bottom: 30px; }
+
+  .guia__top img {
+    width: 92px; height: 92px;
+    border-radius: 24px;
+    box-shadow: 0 0 38px rgba(168, 85, 247, .5);
+  }
+
+  .guia__top h1 {
+    font-family: var(--display);
+    font-size: 25px;
+    font-weight: 900;
+    letter-spacing: .5px;
+    margin: 16px 0 6px;
+    background: linear-gradient(95deg, var(--cyan), #fff 45%, var(--magenta));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .guia__top p { color: var(--texto-3); font-size: 14px; margin: 0; }
+
+  .paso {
+    display: flex;
+    gap: 14px;
+    padding: 20px 0;
+    border-bottom: 1px solid rgba(160, 120, 255, .14);
+  }
+
+  .paso:last-of-type { border-bottom: 0; }
+
+  .paso__n {
+    flex: none;
+    width: 38px; height: 38px;
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    font-family: var(--display);
+    font-weight: 900;
+    font-size: 17px;
+    color: #0a0320;
+    background: linear-gradient(135deg, var(--cyan), var(--violeta));
+  }
+
+  .paso__cuerpo { flex: 1; min-width: 0; }
+
+  .paso h2 {
+    font-size: 18px;
+    font-weight: 800;
+    margin: 6px 0 8px;
+  }
+
+  .paso p { margin: 0 0 10px; color: var(--texto-2); font-size: 15px; line-height: 1.5; }
+  .paso p:last-child { margin-bottom: 0; }
+  .paso b { color: var(--texto); }
+
+  .enlace-app {
+    display: block;
+    text-align: center;
+    padding: 15px;
+    margin: 4px 0 10px;
+    border-radius: 13px;
+    border: 1px solid var(--cyan);
+    background: rgba(47, 228, 255, .1);
+    color: var(--cyan);
+    font-weight: 700;
+    font-size: 15px;
+    text-decoration: none;
+    word-break: break-all;
+  }
+
+  /* Cada celular tiene su camino: mostrar los dos a la vez confunde. */
+  .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+
+  .tabs button {
+    flex: 1;
+    min-height: 48px;   /* que el pulgar no falle al elegir su celular */
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid var(--linea);
+    background: var(--panel);
+    color: var(--texto-2);
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .tabs button[aria-selected="true"] {
+    border-color: var(--cyan);
+    background: rgba(47, 228, 255, .14);
+    color: var(--cyan);
+  }
+
+  [role="tabpanel"][hidden] { display: none; }
+
+  ol.pasos-chicos { margin: 0; padding-left: 20px; color: var(--texto-2); font-size: 15px; line-height: 1.75; }
+  ol.pasos-chicos b { color: var(--texto); }
+
+  .clave {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 7px;
+    background: rgba(255, 255, 255, .08);
+    border: 1px solid var(--linea);
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .pie {
+    text-align: center;
+    margin-top: 34px;
+    padding-top: 22px;
+    border-top: 1px solid rgba(160, 120, 255, .14);
+    color: var(--texto-3);
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+
+<div class="guia">
+
+  <div class="guia__top">
+    <img src="assets/logo.jpg" alt="NOVA">
+    <h1>Instalar NOVA POS</h1>
+    <p>Cuatro pasos. Toma menos de 5 minutos.</p>
+  </div>
+
+  <div class="aviso aviso--info">
+    <b>Antes de empezar</b> pedile a Nicolás los dos datos de conexión: la
+    <b>dirección del servidor</b> y la <b>clave</b>. Te los manda por WhatsApp.
+  </div>
+
+  <!-- 1 -->
+  <div class="paso">
+    <div class="paso__n">1</div>
+    <div class="paso__cuerpo">
+      <h2>Abrí el link</h2>
+      <p>Tocá acá desde el celular donde vas a usar la app:</p>
+      <a class="enlace-app" id="linkApp" href="./">Abrir NOVA POS</a>
+      <p id="avisoNavegador"></p>
+    </div>
+  </div>
+
+  <!-- 2 -->
+  <div class="paso">
+    <div class="paso__n">2</div>
+    <div class="paso__cuerpo">
+      <h2>Instalala en la pantalla de inicio</h2>
+      <p>Así queda con ícono, como cualquier app, y abre a pantalla completa.</p>
+
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tab-ios" aria-controls="p-ios" aria-selected="true">iPhone</button>
+        <button role="tab" id="tab-android" aria-controls="p-android" aria-selected="false">Android</button>
+      </div>
+
+      <div role="tabpanel" id="p-ios" aria-labelledby="tab-ios">
+        <ol class="pasos-chicos">
+          <li>Abrí el link en <b>Safari</b> (la brújula azul). En iPhone no funciona desde Chrome.</li>
+          <li>Tocá el botón <b>Compartir</b> — el cuadrito con la flecha hacia arriba, abajo al centro.</li>
+          <li><b>Deslizá hacia arriba</b> dentro de esa lista hasta encontrar
+              <b>Añadir a pantalla de inicio</b>.</li>
+          <li>Si aparece <b>Abrir como app web</b>, dejalo <b>activado</b>.</li>
+          <li>Tocá <b>Añadir</b>, arriba a la derecha.</li>
+        </ol>
+      </div>
+
+      <div role="tabpanel" id="p-android" aria-labelledby="tab-android" hidden>
+        <ol class="pasos-chicos">
+          <li>Abrí el link en <b>Chrome</b>.</li>
+          <li>Tocá el menú <b>⋮</b>, arriba a la derecha.</li>
+          <li>Elegí <b>Instalar aplicación</b> (o <b>Agregar a pantalla de inicio</b>).</li>
+          <li>Confirmá con <b>Instalar</b>.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3 -->
+  <div class="paso">
+    <div class="paso__n">3</div>
+    <div class="paso__cuerpo">
+      <h2>Conectá el servidor</h2>
+      <p>Abrí la app <b>desde el ícono nuevo</b>, no desde el navegador. Después:</p>
+      <ol class="pasos-chicos">
+        <li>Abajo a la derecha, tocá <span class="clave">Ajustes</span>.</li>
+        <li>Tocá <span class="clave">Conectar servidor</span>.</li>
+        <li>Pegá la <b>dirección del servidor</b> en el primer campo.</li>
+        <li>Pegá la <b>clave</b> en el segundo.</li>
+        <li>Tocá <span class="clave">Conectar</span>.</li>
+      </ol>
+      <p style="margin-top:12px">Esto se hace <b>una sola vez</b> por celular.</p>
+    </div>
+  </div>
+
+  <!-- 4 -->
+  <div class="paso">
+    <div class="paso__n">4</div>
+    <div class="paso__cuerpo">
+      <h2>Entrá y elegí tu sede</h2>
+      <ol class="pasos-chicos">
+        <li>Escribí tu <b>correo</b> y tu <b>contraseña</b>, y tocá <span class="clave">Entrar</span>.</li>
+        <li>La app pregunta <b>¿Dónde estás?</b> — elegí la sede donde vas a trabajar.</li>
+      </ol>
+      <p style="margin-top:12px">Listo. Ya podés abrir cuentas y cobrar.</p>
+    </div>
+  </div>
+
+  <div class="aviso aviso--ok" style="margin-top:22px">
+    <b>Ojo con la sede.</b> Lo que vendas se registra en la sede que elegiste.
+    Si te cambiás de local, tocá <b>Cambiar</b> arriba a la derecha.
+  </div>
+
+  <h2 style="font-family:var(--display);font-size:14px;letter-spacing:1.4px;text-transform:uppercase;color:var(--texto-3);margin:32px 0 12px">
+    Si algo no sale
+  </h2>
+
+  <div class="tarjeta">
+    <ul class="lista-simple">
+      <li><span><b>No aparece “Añadir a pantalla de inicio”</b><br>
+        <span class="chico">Estás en Chrome y tenés iPhone. Abrilo en Safari.</span></span></li>
+      <li><span><b>“Correo o contraseña incorrectos”</b><br>
+        <span class="chico">Pedile a Nicolás que te revise el usuario.</span></span></li>
+      <li><span><b>“Esa clave no parece la correcta”</b><br>
+        <span class="chico">Se copió incompleta. Pedila de nuevo y pegala entera.</span></span></li>
+      <li><span><b>Arriba dice “Sin red”</b><br>
+        <span class="chico">Podés seguir vendiendo igual. Se sincroniza solo cuando vuelva la señal.</span></span></li>
+    </ul>
+  </div>
+
+  <p class="pie">NOVA · Granizados, Cócteles y Micheladas · Medellín</p>
+</div>
+
+<script>
+  // El link a la app sale de la ubicación de esta guía, así sigue sirviendo
+  // aunque la app cambie de dirección algún día.
+  var linkApp = document.getElementById('linkApp');
+  linkApp.href = location.href.replace(/guia\.html.*$/, '');
+  linkApp.textContent = linkApp.href.replace(/^https?:\/\//, '');
+
+  // Se muestra primero la pestaña del celular que está leyendo la guía.
+  var esIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+           || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+  var tabs = [
+    { boton: document.getElementById('tab-ios'),     panel: document.getElementById('p-ios') },
+    { boton: document.getElementById('tab-android'), panel: document.getElementById('p-android') }
+  ];
+
+  function mostrar(indice) {
+    tabs.forEach(function (t, i) {
+      var activa = i === indice;
+      t.boton.setAttribute('aria-selected', activa ? 'true' : 'false');
+      t.panel.hidden = !activa;
+    });
+  }
+
+  tabs.forEach(function (t, i) { t.boton.onclick = function () { mostrar(i); }; });
+  mostrar(esIOS ? 0 : 1);
+
+  if (esIOS && !navigator.userAgent.includes('CriOS')) {
+    document.getElementById('avisoNavegador').innerHTML =
+      'Estás en Safari, que es lo correcto para iPhone.';
+  } else if (navigator.userAgent.includes('CriOS')) {
+    document.getElementById('avisoNavegador').innerHTML =
+      '<b style="color:var(--ambar)">Estás en Chrome y tenés iPhone.</b> ' +
+      'Copiá este link y abrilo en Safari, o no vas a poder instalarla.';
+  }
+</script>
+</body>
+</html>

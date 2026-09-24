@@ -1291,7 +1291,12 @@
     }
 
     html += '<div class="titulo-seccion">La app</div><div class="tarjeta">' +
-      '<p class="chico">Para tenerla como app: abrí el menú del navegador y tocá <b>“Agregar a pantalla de inicio”</b>.</p>' +
+      '<p class="chico">Para instalarla en otro celular, mandá este link por WhatsApp: ' +
+      'la guía explica sola cómo hacerlo.</p>' +
+      '<div class="fila-btn mt">' +
+        '<a class="btn btn--chico" href="guia.html" target="_blank" rel="noopener">Ver la guía</a>' +
+        '<button class="btn btn--chico btn--fantasma" id="bCopiarGuia">Copiar link</button>' +
+      '</div>' +
       '<ul class="lista-simple mt"><li><span>Versión</span><b class="chico">1.0</b></li>' +
       '<li><span>Cuentas guardadas</span><b class="chico">' + S.cuentas().length + '</b></li></ul>' +
       (dueno ? '<button class="btn btn--fantasma btn--peligro btn--bloque btn--chico mt" id="bBorrarTodo">Borrar todos los datos de este celular</button>' : '') +
@@ -1341,6 +1346,18 @@
         } catch (e) { toast(e.message); }
       };
       lector.readAsText(f);
+    };
+
+    if ($('#bCopiarGuia')) $('#bCopiarGuia').onclick = function () {
+      var url = location.href.replace(/(index\.html)?(\?.*)?(#.*)?$/, '') + 'guia.html';
+      // En el celular casi siempre hay portapapeles; si no, se muestra para copiar a mano.
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url)
+          .then(function () { toast('Link copiado'); })
+          .catch(function () { prompt('Copiá este link:', url); });
+      } else {
+        prompt('Copiá este link:', url);
+      }
     };
 
     if ($('#bBorrarTodo')) $('#bBorrarTodo').onclick = function () {
