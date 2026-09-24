@@ -176,11 +176,10 @@ c.setFillColor(CYAN)
 c.drawString(MARGEN + 43, y, 'ngomezm1.github.io/nova-pos')
 y -= 6
 
-y = paso(c, 2, y - 18, 'Tocá Compartir',
-         'Arriba a la derecha hay una cajita con una flecha hacia arriba. Esa es.')
+y = paso(c, 2, y - 18, 'Tocá los 3 puntos',
+         'Abajo del todo, a la derecha de la pantalla.')
 
-y = paso(c, 3, y - 18, 'Añadir a pantalla de inicio',
-         'Tocá "Ver más" y buscá esa opción en la lista. '
+y = paso(c, 3, y - 18, 'Compartir  >  Ver más  >  Agregar a inicio',
          'Si sale "Abrir como app web", dejalo activado. '
          'Tocá Añadir y el ícono queda en tu celular.')
 
@@ -215,10 +214,10 @@ texto(c, MARGEN, y, 'SI ALGO NO SALE', 'Helvetica-Bold', 9.5, TEXTO3)
 y -= 22
 
 problemas = [
-    ('No veo la cajita arriba a la derecha',
-     'Puede estar abajo al centro: depende de tu Safari.'),
-    ('No encuentro "Añadir a pantalla de inicio"',
-     'Estás en Chrome. Abrí el link en Safari.'),
+    ('No veo los 3 puntos abajo',
+     'Deslizá un poco hacia abajo para que aparezca la barra.'),
+    ('No encuentro "Agregar a inicio"',
+     'Estás en Chrome. Solo sale en Safari.'),
     ('"Esa clave no parece la correcta"',
      'Se copió incompleta. Pedila de nuevo y pegala entera.'),
     ('Arriba dice "Sin red"',
