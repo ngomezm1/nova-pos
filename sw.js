@@ -2,7 +2,7 @@
  * La app tiene que abrir aunque no haya señal en el local: el casco de la app se
  * sirve desde caché y los datos viven en localStorage.
  */
-var CACHE = 'nova-pos-v7';
+var CACHE = 'nova-pos-v8';
 
 var CASCO = [
   './',

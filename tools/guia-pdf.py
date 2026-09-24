@@ -176,14 +176,13 @@ c.setFillColor(CYAN)
 c.drawString(MARGEN + 43, y, 'ngomezm1.github.io/nova-pos')
 y -= 6
 
-y = paso(c, 2, y - 18, 'Tocá el botón Compartir',
-         'Es el cuadrito con la flecha hacia arriba, en la barra de abajo, al centro. '
-         'Si no ves la barra, deslizá un poco hacia arriba en la página.')
+y = paso(c, 2, y - 18, 'Tocá Compartir',
+         'Arriba a la derecha hay una cajita con una flecha hacia arriba. Esa es.')
 
 y = paso(c, 3, y - 18, 'Añadir a pantalla de inicio',
-         'Buscá el cuadrito con un + adentro. Si no lo ves, deslizá hacia arriba dentro de la lista. '
+         'Tocá "Ver más" y buscá esa opción en la lista. '
          'Si sale "Abrir como app web", dejalo activado. '
-         'Después tocá Añadir, arriba a la derecha.')
+         'Tocá Añadir y el ícono queda en tu celular.')
 
 y = paso(c, 4, y - 18, 'Abrí la app desde el ícono nuevo',
          'Ya no uses Safari: entrá por el ícono de NOVA que quedó en tu pantalla. '
@@ -216,6 +215,8 @@ texto(c, MARGEN, y, 'SI ALGO NO SALE', 'Helvetica-Bold', 9.5, TEXTO3)
 y -= 22
 
 problemas = [
+    ('No veo la cajita arriba a la derecha',
+     'Puede estar abajo al centro: depende de tu Safari.'),
     ('No encuentro "Añadir a pantalla de inicio"',
      'Estás en Chrome. Abrí el link en Safari.'),
     ('"Esa clave no parece la correcta"',
