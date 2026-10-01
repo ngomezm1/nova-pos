@@ -29,8 +29,14 @@
   var pullTimer = null;
   var canal = null;
   var oyentes = [];
-  var fallas = {};          // tabla -> motivo del ultimo fallo
+  // Subida y bajada se registran por separado: que la bajada funcione no
+  // significa que la subida tambien, y son problemas distintos.
+  var fallasPush = {};
+  var fallasPull = {};
   var reintentando = false; // evita que la reconciliacion se llame en bucle
+  var seguidas = 0;         // fallos consecutivos de subida
+  var pausado = false;      // deja de reintentar solo tras varios fallos
+  var ERR_KEY = 'nova.ultimoError';
 
   /* ---------- configuración ---------- */
 
@@ -225,17 +231,52 @@
            || !navigator.onLine;
   }
 
+  /* El ultimo error queda guardado en el celular. Si solo viviera en memoria,
+   * el siguiente intento lo borraria y no habria forma de leerlo.
+   */
+  function guardarUltimoError(detalle) {
+    try {
+      localStorage.setItem(ERR_KEY, JSON.stringify({
+        cuando: new Date().toISOString(), detalle: detalle
+      }));
+    } catch (e) { /* sin espacio: el error en pantalla alcanza */ }
+  }
+
+  // Lee el ultimo error guardado en el celular. Se llama distinto que la
+  // variable `ultimoError`, que guarda el detalle del estado en memoria.
+  function errorGuardado() {
+    try { return JSON.parse(localStorage.getItem(ERR_KEY) || 'null'); }
+    catch (e) { return null; }
+  }
+
+  function olvidarUltimoError() {
+    localStorage.removeItem(ERR_KEY);
+  }
+
   function resumirFallas() {
-    var tablasRotas = Object.keys(fallas);
-    if (!tablasRotas.length) {
+    var rotas = {};
+    Object.keys(fallasPush).forEach(function (t) { rotas['subir ' + t] = fallasPush[t]; });
+    Object.keys(fallasPull).forEach(function (t) { rotas['bajar ' + t] = fallasPull[t]; });
+
+    var claves = Object.keys(rotas);
+    if (!claves.length) {
+      seguidas = 0;
+      pausado = false;
+      olvidarUltimoError();
       setEstado('conectado');
       return;
     }
-    var deRed = tablasRotas.every(function (t) { return fallas[t].red; });
-    var detalle = tablasRotas.map(function (t) {
-      return t + ': ' + fallas[t].motivo;
-    }).join(' · ');
-    setEstado(deRed ? 'offline' : 'error', detalle);
+
+    var deRed = claves.every(function (k) { return rotas[k].red; });
+    var detalle = claves.map(function (k) { return k + ': ' + rotas[k].motivo; }).join(' · ');
+
+    if (!deRed) guardarUltimoError(detalle);
+
+    if (pausado) {
+      setEstado('error', detalle + ' — reintentos en pausa');
+    } else {
+      setEstado(deRed ? 'offline' : 'error', detalle);
+    }
   }
 
   function limpiarFila(r) {
@@ -249,10 +290,12 @@
    * quedaban en el celular por culpa de, por ejemplo, una tabla que todavia
    * no existia en el servidor.
    */
-  function push() {
+  function push(forzado) {
     if (!activo()) return Promise.resolve();
+    if (pausado && !forzado) return Promise.resolve();
+
     var pendientes = tablas().filter(function (t) { return NOVA.store.sucios(t).length; });
-    if (!pendientes.length) { resumirFallas(); return Promise.resolve(); }
+    if (!pendientes.length) { fallasPush = {}; resumirFallas(); return Promise.resolve(); }
 
     return Promise.all(pendientes.map(function (t) {
       var filas = NOVA.store.sucios(t);
@@ -260,22 +303,29 @@
         .then(function (r) {
           if (r.error) throw new Error(r.error.message);
           NOVA.store.limpiarSucios(t, filas.map(function (f) { return f.id; }));
-          delete fallas[t];
+          delete fallasPush[t];
         })
         .catch(function (e) {
-          fallas[t] = { motivo: (e && e.message) || 'error', red: esFalloDeRed(e) };
+          fallasPush[t] = { motivo: (e && e.message) || 'error', red: esFalloDeRed(e) };
         });
     })).then(function () {
       // Un nombre repetido no se arregla reintentando: hay una copia local de
       // algo que el servidor ya tiene. Se reconcilia y se reintenta una vez.
-      var duplicados = Object.keys(fallas).some(function (t) {
-        return /duplicate key|already exists/i.test(fallas[t].motivo);
+      var duplicados = Object.keys(fallasPush).some(function (t) {
+        return /duplicate key|already exists/i.test(fallasPush[t].motivo);
       });
       if (duplicados && !reintentando && NOVA.store.reconciliar()) {
         reintentando = true;
-        fallas = {};
+        fallasPush = {};
         return push().then(function () { reintentando = false; });
       }
+
+      // Si el servidor sigue rechazando, insistir cada 20 segundos solo gasta
+      // bateria y hace parpadear el error. Mejor parar y decirlo.
+      var falloReal = Object.keys(fallasPush).some(function (t) { return !fallasPush[t].red; });
+      seguidas = falloReal ? seguidas + 1 : 0;
+      if (seguidas >= 3) pausado = true;
+
       resumirFallas();
       avisar();
     });
@@ -294,10 +344,10 @@
             NOVA.store.aplicarRemotos(t, filas);
             localStorage.setItem(SYNC_KEY + t, filas[filas.length - 1].updated_at);
           }
-          delete fallas[t];
+          delete fallasPull[t];
         })
         .catch(function (e) {
-          fallas[t] = { motivo: (e && e.message) || 'error', red: esFalloDeRed(e) };
+          fallasPull[t] = { motivo: (e && e.message) || 'error', red: esFalloDeRed(e) };
         });
     })).then(function () {
       // El ayudante no guarda historial: lo de días pasados se borra de su
@@ -305,6 +355,30 @@
       if (!esDueno()) NOVA.store.purgarHistorial();
       resumirFallas();
     });
+  }
+
+  /* Reparacion manual: reconcilia, reintenta aunque este en pausa y devuelve
+   * el resultado para mostrarlo quieto en pantalla, no en un badge que cambia.
+   */
+  function repararYReintentar() {
+    pausado = false;
+    seguidas = 0;
+    fallasPush = {};
+    fallasPull = {};
+
+    var limpiadas = NOVA.store.reconciliar();
+
+    return pull()
+      .then(function () { return push(true); })
+      .then(function () {
+        var rotas = Object.keys(fallasPush).concat(Object.keys(fallasPull));
+        return {
+          limpiadas: limpiadas,
+          ok: rotas.length === 0,
+          detalle: rotas.length ? ((errorGuardado() || {}).detalle || ultimoError) : '',
+          pendientes: NOVA.store.hayPendientesDeSync()
+        };
+      });
   }
 
   /* Revisa tabla por tabla y devuelve un diagnostico legible. Sin esto, un
@@ -395,7 +469,9 @@
     entrar: entrar, salir: salir, cambiarPassword: cambiarPassword,
     listarPerfiles: listarPerfiles, cambiarRol: cambiarRol, renombrarPerfil: renombrarPerfil,
     sincronizar: sincronizar, agendarPush: agendarPush, diagnosticar: diagnosticar,
-    fallas: function () { return fallas; },
+    repararYReintentar: repararYReintentar,
+    ultimoError: errorGuardado, olvidarUltimoError: olvidarUltimoError,
+    pausado: function () { return pausado; },
     estado: function () { return estado; },
     error: function () { return ultimoError; },
     alCambiar: function (fn) { oyentes.push(fn); },

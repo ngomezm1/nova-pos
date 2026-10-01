@@ -498,6 +498,28 @@
     commit(['inventario']);
   }
 
+  /* Qué productos siguen usando ese vaso. Borrar un vaso que todavía se vende
+   * no sirve de nada: la próxima venta lo crea de nuevo, y mientras tanto el
+   * descuento queda sin fila donde anotarse.
+   */
+  function productosQueUsan(clave) {
+    return productosActivos().filter(function (p) {
+      return p.vaso && claveVaso(p.vaso, p.oz) === clave;
+    });
+  }
+
+  /* Borra una línea de inventario en TODAS las sedes. Los movimientos ya
+   * registrados no se tocan: son historia y deben seguir cuadrando.
+   */
+  function eliminarLinea(clave) {
+    if (productosQueUsan(clave).length) return false;
+    var filas = vivos('inventario').filter(function (i) { return claveDe(i) === clave; });
+    if (!filas.length) return false;
+    filas.forEach(function (i) { borrar('inventario', i.id); });
+    commit(['inventario']);
+    return true;
+  }
+
   // Traslado entre sedes: sale de una y entra a la otra en un solo gesto,
   // que es como realmente se mueven los vasos entre locales.
   function trasladar(desdeSede, haciaSede, clave, cantidad) {
@@ -1119,6 +1141,7 @@
     registrarEntrada: registrarEntrada,
     ajustarStock: ajustarStock, registrarMerma: registrarMerma,
     crearInsumo: crearInsumo, guardarInsumo: guardarInsumo, eliminarInsumo: eliminarInsumo,
+    eliminarLinea: eliminarLinea, productosQueUsan: productosQueUsan,
     trasladar: trasladar,
     fijarMinimo: fijarMinimo, alertasStock: alertasStock, movimientosDe: movimientosDe,
 

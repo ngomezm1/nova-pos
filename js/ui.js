@@ -230,6 +230,7 @@
     document.body.innerHTML =
       '<div id="app">' +
         '<header class="cabecera"></header>' +
+        '<div id="avisos"></div>' +
         '<main id="main"></main>' +
       '</div>' +
       '<nav class="nav" id="nav"></nav>';
@@ -258,14 +259,17 @@
     m.innerHTML = '';
     $$('.fab').forEach(function (f) { f.remove(); });
 
-    var problema = avisoSync();
-    if (problema) m.innerHTML = problema;
+    $('#avisos').innerHTML = avisoSync();
 
     if (vista.pantalla === 'cuenta' && vista.cuentaId) {
       var c = S.buscar('cuentas', vista.cuentaId);
       if (!c || c.deleted) { vista.pantalla = 'cuentas'; vista.cuentaId = null; return render(); }
       pantallaCuenta(m, c);
       return;
+    }
+
+    if ($('#bReparar')) {
+      $('#bReparar').onclick = function () { repararSync($('#avisoSync')); };
     }
 
     switch (vista.pantalla) {
@@ -315,13 +319,46 @@
    */
   function avisoSync() {
     if (!C.configurado()) return '';
-    if (C.estado() !== 'error') return '';
-    var detalle = C.error() || 'Error desconocido';
+
+    var guardado = C.ultimoError();
+    if (C.estado() !== 'error' && !guardado) return '';
+
+    var detalle = C.error() || (guardado && guardado.detalle) || 'Error desconocido';
+    var cuando = guardado ? ' · ' + haceRato(guardado.cuando) : '';
+
     return '<div class="aviso aviso--error" id="avisoSync">' +
       '<b>No se están guardando los datos en el servidor.</b><br>' +
-      'Las ventas quedan en este celular hasta que se arregle.<br>' +
-      '<span class="chico" style="color:inherit;opacity:.85">' + esc(detalle) + '</span>' +
+      'Las ventas quedan en este celular hasta que se arregle.' + esc(cuando) + '<br>' +
+      '<span class="chico" style="color:inherit;opacity:.85;word-break:break-word">' +
+        esc(detalle) + '</span>' +
+      '<button class="btn btn--chico btn--bloque mt" id="bReparar">Reparar ahora</button>' +
       '</div>';
+  }
+
+  /* Repara y deja el resultado escrito en pantalla. El badge de arriba cambia
+   * cada pocos segundos y no se alcanza a leer; esto se queda quieto.
+   */
+  function repararSync(donde) {
+    var caja = donde || $('#avisoSync');
+    if (!caja) return;
+    caja.innerHTML = '<b>Reparando…</b>';
+
+    C.repararYReintentar().then(function (r) {
+      if (r.ok) {
+        caja.outerHTML = '<div class="aviso aviso--ok">' +
+          '<b>Listo, quedó sincronizado.</b>' +
+          (r.limpiadas ? '<br><span class="chico" style="color:inherit">Se limpiaron ' +
+            plural(r.limpiadas, 'copia repetida', 'copias repetidas') + '.</span>' : '') +
+          '</div>';
+        setTimeout(render, 1800);
+      } else {
+        caja.innerHTML = '<b>Sigue fallando.</b><br>' +
+          '<span class="chico" style="color:inherit;opacity:.85;word-break:break-word">' +
+            esc(r.detalle || 'Sin detalle') + '</span>' +
+          '<button class="btn btn--chico btn--bloque mt" id="bReparar">Reintentar</button>';
+        if ($('#bReparar')) $('#bReparar').onclick = function () { repararSync(caja); };
+      }
+    });
   }
 
   function badgeSync() {
@@ -847,7 +884,7 @@
     var alertas = S.alertasStock(sedeId);
     var res = S.resumen(S.diaNegocio(), sedeId);
 
-    var html = avisoSync();
+    var html = '';
 
     // Con varias sedes, lo primero es dejar clar\u00edsimo cu\u00e1l se est\u00e1 mirando.
     if (sedes.length > 1) {
@@ -1047,7 +1084,9 @@
         '<input id="mMin" type="number" inputmode="numeric" min="0" value="' + (i.minimo || 0) + '"></div>' +
       '<button class="btn btn--primario btn--bloque" id="bCerrarH">Listo</button>' +
       (esInsumo ? '<button class="btn btn--fantasma btn--bloque btn--chico mt" id="bEditarIns">' +
-        'Cambiar nombre o unidad</button>' : ''),
+        'Cambiar nombre o unidad</button>' : '') +
+      '<button class="btn btn--fantasma btn--peligro btn--bloque btn--chico mt" id="bBorrarLinea">' +
+        'Eliminar del inventario</button>',
       function (h) {
         $('#bEnt', h).onclick = function () {
           var n = Number($('#mEnt', h).value) || 0;
@@ -1076,6 +1115,38 @@
         if ($('#bEditarIns', h)) $('#bEditarIns', h).onclick = function () {
           cerrarHoja();
           editarInsumo(i);
+        };
+
+        $('#bBorrarLinea', h).onclick = function () {
+          // Un vaso que todavía se vende no se puede sacar: la próxima venta
+          // lo crearía de nuevo y el descuento quedaría sin donde anotarse.
+          var enUso = esInsumo ? [] : S.productosQueUsan(clave);
+          if (enUso.length) {
+            cerrarHoja();
+            return abrirHoja(
+              '<h2>No se puede eliminar</h2>' +
+              '<p class="sub">Todavía hay productos que usan ' + esc(nombre) + ':</p>' +
+              '<div class="tarjeta"><ul class="lista-simple">' +
+                enUso.map(function (p) {
+                  return '<li><span>' + esc(p.nombre) + '</span></li>';
+                }).join('') + '</ul></div>' +
+              '<p class="chico">Ocultá o borrá esos productos en Ajustes y volvé a intentar.</p>' +
+              '<button class="btn btn--primario btn--bloque mt" id="bOk">Entendido</button>',
+              function (h2) { $('#bOk', h2).onclick = cerrarHoja; }
+            );
+          }
+
+          cerrarHoja();
+          confirmar('¿Eliminar ' + nombre + '?',
+            'Se quita de todas las sedes junto con su conteo. Los movimientos ya registrados quedan en el historial.',
+            'Eliminar', 'btn--peligro')
+            .then(function (ok) {
+              if (!ok) return;
+              if (esInsumo) S.eliminarInsumo(clave);
+              else if (!S.eliminarLinea(clave)) return toast('No se pudo eliminar');
+              toast(nombre + ' eliminado');
+              render();
+            });
         };
       }
     );
@@ -1352,8 +1423,18 @@
           '<div class="chico">' + (dueno ? 'Dueño · acceso total' : 'Ayudante · solo ventas') + '</div></div>' +
         '</div>' +
         '<div class="mt">' + badgeSync() +
-          (C.error() ? '<div class="chico" style="color:var(--rojo);margin-top:6px">' + esc(C.error()) + '</div>' : '') +
+          (C.pausado() ? ' <span class="etiqueta etiqueta--aviso">reintentos en pausa</span>' : '') +
         '</div>' +
+        (function () {
+          var u = C.ultimoError();
+          if (!u) return '';
+          return '<div class="aviso aviso--error mt" style="margin-bottom:0">' +
+            '<b>Último error</b> · ' + esc(haceRato(u.cuando)) + '<br>' +
+            '<span class="chico" style="color:inherit;opacity:.85;word-break:break-word">' +
+              esc(u.detalle) + '</span>' +
+            '<button class="btn btn--chico btn--bloque mt" id="bRepararAj">Reparar ahora</button>' +
+            '</div>';
+        })() +
       '</div>';
 
     if (dueno) {
@@ -1444,6 +1525,10 @@
     if ($('#bNuevaSede')) $('#bNuevaSede').onclick = function () { editarSede(null); };
     if ($('#bNuevoProd')) $('#bNuevoProd').onclick = function () { editarProducto(null); };
     if ($('#bConectar')) $('#bConectar').onclick = hojaConectar;
+    if ($('#bRepararAj')) $('#bRepararAj').onclick = function () {
+      repararSync($('#bRepararAj').parentNode);
+    };
+
     if ($('#bDiag')) $('#bDiag').onclick = function () {
       var caja = $('#resDiag');
       caja.innerHTML = '<p class="chico mt">Revisando…</p>';

@@ -133,6 +133,11 @@ input, select, textarea, button { font-family: inherit; font-size: inherit; colo
   text-overflow: ellipsis;
 }
 
+/* El aviso de sincronizacion va aparte de main, que cada pantalla reescribe. */
+#avisos:not(:empty) {
+  padding: 14px 16px 0;
+}
+
 main {
   flex: 1;
   padding: 16px 16px calc(var(--nav-h) + var(--safe-b) + 28px);
