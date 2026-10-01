@@ -258,6 +258,9 @@
     m.innerHTML = '';
     $$('.fab').forEach(function (f) { f.remove(); });
 
+    var problema = avisoSync();
+    if (problema) m.innerHTML = problema;
+
     if (vista.pantalla === 'cuenta' && vista.cuentaId) {
       var c = S.buscar('cuentas', vista.cuentaId);
       if (!c || c.deleted) { vista.pantalla = 'cuentas'; vista.cuentaId = null; return render(); }
@@ -304,6 +307,21 @@
       badgeSync();
 
     $('#bSede').onclick = pedirCambioDeSede;
+  }
+
+  /* Banner rojo cuando el servidor rechaza los datos. Un fallo de red se
+   * resuelve solo y no merece interrumpir; uno de servidor no se arregla
+   * esperando, y mientras tanto las ventas se quedan en este celular.
+   */
+  function avisoSync() {
+    if (!C.configurado()) return '';
+    if (C.estado() !== 'error') return '';
+    var detalle = C.error() || 'Error desconocido';
+    return '<div class="aviso aviso--error" id="avisoSync">' +
+      '<b>No se están guardando los datos en el servidor.</b><br>' +
+      'Las ventas quedan en este celular hasta que se arregle.<br>' +
+      '<span class="chico" style="color:inherit;opacity:.85">' + esc(detalle) + '</span>' +
+      '</div>';
   }
 
   function badgeSync() {
@@ -826,11 +844,10 @@
       return;
     }
 
-    var inv = S.inventario(sedeId);
     var alertas = S.alertasStock(sedeId);
     var res = S.resumen(S.diaNegocio(), sedeId);
 
-    var html = '';
+    var html = avisoSync();
 
     // Con varias sedes, lo primero es dejar clar\u00edsimo cu\u00e1l se est\u00e1 mirando.
     if (sedes.length > 1) {
@@ -843,12 +860,14 @@
     if (alertas.length) {
       html += '<div class="aviso aviso--error">&#9888; Se est\u00e1 acabando en ' + esc(S.nombreSede(sedeId)) + ': ' +
         alertas.map(function (i) {
-          return esc(S.etiquetaVaso(i.tipo, i.oz)) + ' (' + (i.stock || 0) + ')';
+          return esc(S.etiquetaDe(i)) + ' (' + (i.stock || 0) + ')';
         }).join(' \u00b7 ') + '</div>';
     }
 
+    var vasos = S.vasos(sedeId);
+
     ['icopor', 'plastico'].forEach(function (tipo) {
-      var lista = inv.filter(function (i) { return i.tipo === tipo; });
+      var lista = vasos.filter(function (i) { return i.tipo === tipo; });
       if (!lista.length) return;
       html += '<div class="titulo-seccion">' +
         (tipo === 'icopor' ? 'Vasos de icopor' : 'Vaso pl\u00e1stico \u00b7 micheladas') + '</div>' +
@@ -871,9 +890,36 @@
         }).join('') + '</div>';
     });
 
+    // ---- insumos ----
+    var lista = S.insumos(sedeId);
+
+    html += '<div class="titulo-seccion">Otros insumos</div>';
+    html += lista.length
+      ? '<div class="tarjeta">' + lista.map(function (i) {
+          var st = i.stock || 0, min = i.minimo || 0;
+          var clase = st <= min ? 'bajo' : (st <= min * 2 ? 'medio' : 'ok');
+          return '<div class="stock">' +
+            '<div class="stock__oz" style="font-size:11px;line-height:1.1;padding:0 4px">' +
+              esc((i.unidad || 'unidad').slice(0, 7)) + '</div>' +
+            '<div class="stock__cuerpo">' +
+              '<div class="item__nombre">' + esc(i.nombre || 'Sin nombre') + '</div>' +
+              '<div class="stock__cant ' + clase + '" style="font-size:17px">' + st +
+                ' <span style="font-size:11px;font-weight:600;color:var(--texto-3)">' +
+                esc(i.unidad || 'unidad') + (st === 1 ? '' : 's') + '</span></div>' +
+              '<div class="stock__nota">Alerta bajo ' + min + '</div>' +
+            '</div>' +
+            '<button class="btn btn--chico" data-inv="' + i.id + '">Mover</button>' +
+          '</div>';
+        }).join('') + '</div>'
+      : '<div class="tarjeta chico centro">Todavía no hay insumos.<br>' +
+        'Agregá lo que quieras contar: pitillos, hielo, limones, cervezas.</div>';
+
+    html += '<button class="btn btn--primario btn--bloque" id="bNuevoInsumo">' +
+      '+ Agregar insumo</button>';
+
     if (sedes.length > 1) {
-      html += '<button class="btn btn--fantasma btn--bloque btn--chico" id="bTraslado">' +
-        'Trasladar vasos a otra sede</button>';
+      html += '<button class="btn btn--fantasma btn--bloque btn--chico mt" id="bTraslado">' +
+        'Trasladar a otra sede</button>';
     }
 
     html += '<div class="titulo-seccion">Movimientos de hoy</div>';
@@ -882,7 +928,7 @@
       ? '<div class="tarjeta"><ul class="lista-simple">' + movs.slice(0, 40).map(function (mv) {
           var signo = mv.delta > 0 ? '+' : '';
           var color = mv.delta > 0 ? 'var(--lima)' : 'var(--texto-2)';
-          return '<li><span>' + esc(S.etiquetaVaso(mv.tipo_vaso, mv.oz)) +
+          return '<li><span>' + esc(mv.nombre || S.etiquetaVaso(mv.tipo_vaso, mv.oz)) +
             '<br><span class="chico">' + esc(mv.motivo) + (mv.nota ? ' \u00b7 ' + esc(mv.nota) : '') +
             ' \u00b7 ' + hora(mv.created_at) + '</span></span>' +
             '<b style="color:' + color + '">' + signo + mv.delta + '</b></li>';
@@ -900,15 +946,87 @@
     });
 
     if ($('#bTraslado')) $('#bTraslado').onclick = function () { hojaTraslado(sedeId); };
+    if ($('#bNuevoInsumo')) $('#bNuevoInsumo').onclick = function () { editarInsumo(null); };
+  }
+
+  /* Un insumo se crea para todas las sedes a la vez: cada una lleva su propio
+   * conteo, pero el nombre y la unidad son los mismos en todas.
+   */
+  function editarInsumo(fila) {
+    var nuevo = !fila;
+    var clave = fila ? S.claveDe(fila) : null;
+
+    abrirHoja(
+      '<h2>' + (nuevo ? 'Nuevo insumo' : esc(fila.nombre || '')) + '</h2>' +
+      '<p class="sub">' + (nuevo
+        ? 'Cualquier cosa que quieras contar: pitillos, hielo, limones, cervezas. Se crea en todas las sedes, cada una con su propio conteo.'
+        : 'El nombre y la unidad cambian en todas las sedes. El stock es de cada una.') + '</p>' +
+      '<div class="campo"><label>Nombre</label>' +
+        '<input id="iN" value="' + esc(fila ? (fila.nombre || '') : '') + '" maxlength="40" ' +
+        'autocapitalize="sentences" placeholder="Ej: Pitillos"></div>' +
+      '<div class="campo"><label>¿Cómo lo contás?</label><select id="iU">' +
+        S.UNIDADES.map(function (u) {
+          var sel = fila && fila.unidad === u ? ' selected' : '';
+          return '<option value="' + u + '"' + sel + '>' + u + '</option>';
+        }).join('') + '</select>' +
+        '<div class="ayuda">Si lo contás de a uno, dejá <b>unidad</b>.</div></div>' +
+      (nuevo ? '<div class="campo"><label>Avisarme cuando queden menos de</label>' +
+        '<input id="iM" type="number" inputmode="numeric" min="0" value="10"></div>' : '') +
+      '<button class="btn btn--primario btn--bloque" id="iG">' +
+        (nuevo ? 'Crear insumo' : 'Guardar') + '</button>' +
+      (!nuevo ? '<button class="btn btn--fantasma btn--peligro btn--bloque btn--chico mt" id="iD">' +
+        'Eliminar insumo</button>' : ''),
+      function (h) {
+        var inp = $('#iN', h);
+        setTimeout(function () { inp.focus(); }, 120);
+
+        $('#iG', h).onclick = function () {
+          var nombre = inp.value.trim();
+          if (!nombre) { inp.focus(); return toast('Ponele nombre'); }
+
+          if (nuevo) {
+            S.crearInsumo({
+              nombre: nombre,
+              unidad: $('#iU', h).value,
+              minimo: Number($('#iM', h).value) || 0
+            });
+            cerrarHoja();
+            toast(nombre + ' creado en todas las sedes');
+          } else {
+            S.guardarInsumo(clave, { nombre: nombre, unidad: $('#iU', h).value });
+            cerrarHoja();
+            toast('Guardado');
+          }
+          render();
+        };
+
+        if ($('#iD', h)) $('#iD', h).onclick = function () {
+          cerrarHoja();
+          confirmar('¿Eliminar ' + (fila.nombre || 'el insumo') + '?',
+            'Se quita de todas las sedes junto con su conteo. Los movimientos ya registrados quedan en el historial.',
+            'Eliminar', 'btn--peligro')
+            .then(function (ok) {
+              if (!ok) return;
+              S.eliminarInsumo(clave);
+              toast('Eliminado');
+              render();
+            });
+        };
+      }
+    );
   }
 
   function hojaMoverStock(i) {
-    var nombre = S.etiquetaVaso(i.tipo, i.oz);
+    var nombre = S.etiquetaDe(i);
+    var clave = S.claveDe(i);
     var enSede = S.nombreSede(i.sede_id);
+    var esInsumo = i.tipo === 'insumo';
 
     abrirHoja(
       '<h2>' + esc(nombre) + '</h2>' +
-      '<p class="sub">' + esc(enSede) + ' \u00b7 hay ' + (i.stock || 0) + ' en stock.</p>' +
+      '<p class="sub">' + esc(enSede) + ' \u00b7 hay ' + (i.stock || 0) +
+        (esInsumo ? ' ' + esc(i.unidad || 'unidad') + ((i.stock || 0) === 1 ? '' : 's') : '') +
+        ' en stock.</p>' +
       '<div class="campo"><label>Entrada por compra</label>' +
         '<div style="display:flex;gap:8px">' +
           '<input id="mEnt" type="number" inputmode="numeric" min="1" placeholder="Cu\u00e1ntos llegaron">' +
@@ -927,30 +1045,37 @@
         '</div></div>' +
       '<div class="campo"><label>Avisarme cuando queden menos de</label>' +
         '<input id="mMin" type="number" inputmode="numeric" min="0" value="' + (i.minimo || 0) + '"></div>' +
-      '<button class="btn btn--primario btn--bloque" id="bCerrarH">Listo</button>',
+      '<button class="btn btn--primario btn--bloque" id="bCerrarH">Listo</button>' +
+      (esInsumo ? '<button class="btn btn--fantasma btn--bloque btn--chico mt" id="bEditarIns">' +
+        'Cambiar nombre o unidad</button>' : ''),
       function (h) {
         $('#bEnt', h).onclick = function () {
           var n = Number($('#mEnt', h).value) || 0;
           if (n <= 0) return toast('Escrib\u00ed cu\u00e1ntos llegaron');
-          S.registrarEntrada(i.sede_id, i.tipo, i.oz, n, 'Compra');
+          S.registrarEntrada(i.sede_id, clave, n, 'Compra');
           cerrarHoja(); toast('+' + n + ' ' + nombre + ' en ' + enSede);
         };
         $('#bCon', h).onclick = function () {
           var v = $('#mCon', h).value;
           if (v === '') return toast('Escrib\u00ed cu\u00e1ntos contaste');
-          S.ajustarStock(i.sede_id, i.tipo, i.oz, Number(v), 'Conteo f\u00edsico');
+          S.ajustarStock(i.sede_id, clave, Number(v), 'Conteo f\u00edsico');
           cerrarHoja(); toast('Stock ajustado a ' + v);
         };
         $('#bMer', h).onclick = function () {
           var n = Number($('#mMer', h).value) || 0;
           if (n <= 0) return toast('Escrib\u00ed cu\u00e1ntos');
-          S.registrarMerma(i.sede_id, i.tipo, i.oz, n, 'Da\u00f1ados o perdidos');
+          S.registrarMerma(i.sede_id, clave, n, 'Da\u00f1ados o perdidos');
           cerrarHoja(); toast('\u2212' + n + ' por merma');
         };
         $('#bCerrarH', h).onclick = function () {
           var min = Number($('#mMin', h).value);
           if (min !== (i.minimo || 0)) S.fijarMinimo(i.id, min);
           cerrarHoja();
+        };
+
+        if ($('#bEditarIns', h)) $('#bEditarIns', h).onclick = function () {
+          cerrarHoja();
+          editarInsumo(i);
         };
       }
     );
@@ -964,18 +1089,18 @@
     if (!otras.length) return toast('No hay otra sede');
 
     var inv = S.inventario(desdeSede).filter(function (i) { return (i.stock || 0) > 0; });
-    if (!inv.length) return toast('No hay vasos para trasladar en esta sede');
+    if (!inv.length) return toast('No hay nada con stock para trasladar');
 
     abrirHoja(
-      '<h2>Trasladar vasos</h2>' +
+      '<h2>Trasladar a otra sede</h2>' +
       '<p class="sub">Salen de ' + esc(S.nombreSede(desdeSede)) + ' y entran a la otra sede. ' +
       'Queda registrado en las dos.</p>' +
       '<div class="campo"><label>Hacia</label><select id="tHacia">' +
         otras.map(function (s) { return '<option value="' + s.id + '">' + esc(s.nombre) + '</option>'; }).join('') +
       '</select></div>' +
-      '<div class="campo"><label>Qu\u00e9 vaso</label><select id="tVaso">' +
+      '<div class="campo"><label>Qu\u00e9</label><select id="tVaso">' +
         inv.map(function (i) {
-          return '<option value="' + i.id + '">' + esc(S.etiquetaVaso(i.tipo, i.oz)) +
+          return '<option value="' + i.id + '">' + esc(S.etiquetaDe(i)) +
             ' \u2014 hay ' + i.stock + '</option>';
         }).join('') +
       '</select></div>' +
@@ -994,9 +1119,9 @@
             return;
           }
           var hacia = $('#tHacia', h).value;
-          S.trasladarVasos(desdeSede, hacia, fila.tipo, fila.oz, n);
+          S.trasladar(desdeSede, hacia, S.claveDe(fila), n);
           cerrarHoja();
-          toast(n + ' ' + S.etiquetaVaso(fila.tipo, fila.oz) + ' \u2192 ' + S.nombreSede(hacia));
+          toast(n + ' ' + S.etiquetaDe(fila) + ' \u2192 ' + S.nombreSede(hacia));
         };
       }
     );
@@ -1269,8 +1394,11 @@
         '<li><span>Estado</span><b class="chico">' + (C.activo() ? 'sesión activa' : 'sin sesión') + '</b></li></ul>' +
         '<div class="fila-btn mt">' +
           '<button class="btn btn--chico" id="bSync">Sincronizar ahora</button>' +
-          '<button class="btn btn--chico btn--peligro btn--fantasma" id="bSalir">Cerrar sesión</button>' +
-        '</div>';
+          '<button class="btn btn--chico" id="bDiag">Revisar conexión</button>' +
+        '</div>' +
+        '<div id="resDiag"></div>' +
+        '<button class="btn btn--chico btn--peligro btn--fantasma btn--bloque mt" id="bSalir">' +
+          'Cerrar sesión</button>';
     }
     html += '</div>';
 
@@ -1316,6 +1444,25 @@
     if ($('#bNuevaSede')) $('#bNuevaSede').onclick = function () { editarSede(null); };
     if ($('#bNuevoProd')) $('#bNuevoProd').onclick = function () { editarProducto(null); };
     if ($('#bConectar')) $('#bConectar').onclick = hojaConectar;
+    if ($('#bDiag')) $('#bDiag').onclick = function () {
+      var caja = $('#resDiag');
+      caja.innerHTML = '<p class="chico mt">Revisando…</p>';
+      C.diagnosticar().then(function (filas) {
+        var malas = filas.filter(function (f) { return !f.ok; });
+        caja.innerHTML =
+          (malas.length
+            ? '<div class="aviso aviso--error mt"><b>' +
+              plural(malas.length, 'tabla con problema', 'tablas con problema') +
+              '.</b> Probablemente falte correr alguno de los archivos SQL en Supabase.</div>'
+            : '<div class="aviso aviso--ok mt">Todo responde bien.</div>') +
+          '<ul class="lista-simple">' + filas.map(function (f) {
+            return '<li><span>' + esc(f.tabla) + '</span><b class="chico" style="color:' +
+              (f.ok ? 'var(--lima)' : 'var(--rojo)') + '">' +
+              (f.ok ? '✓ ' : '✕ ') + esc(f.motivo) + '</b></li>';
+          }).join('') + '</ul>';
+      });
+    };
+
     if ($('#bSync')) $('#bSync').onclick = function () {
       toast('Sincronizando…');
       C.sincronizar().then(function () { toast('Al día'); render(); });

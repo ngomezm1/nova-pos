@@ -29,6 +29,7 @@
   var pullTimer = null;
   var canal = null;
   var oyentes = [];
+  var fallas = {};          // tabla -> motivo del ultimo fallo
 
   /* ---------- configuración ---------- */
 
@@ -213,55 +214,102 @@
 
   /* ---------- sincronización ---------- */
 
+  /* Un fallo de red y un rechazo del servidor se arreglan de formas opuestas:
+   * uno se espera, el otro hay que corregirlo. Mostrarlos igual manda a buscar
+   * el problema donde no esta.
+   */
+  function esFalloDeRed(e) {
+    var m = String((e && e.message) || e || '');
+    return /failed to fetch|networkerror|load failed|network request failed|ERR_INTERNET/i.test(m)
+           || !navigator.onLine;
+  }
+
+  function resumirFallas() {
+    var tablasRotas = Object.keys(fallas);
+    if (!tablasRotas.length) {
+      setEstado('conectado');
+      return;
+    }
+    var deRed = tablasRotas.every(function (t) { return fallas[t].red; });
+    var detalle = tablasRotas.map(function (t) {
+      return t + ': ' + fallas[t].motivo;
+    }).join(' · ');
+    setEstado(deRed ? 'offline' : 'error', detalle);
+  }
+
   function limpiarFila(r) {
     var out = {};
     Object.keys(r).forEach(function (k) { if (k !== '_dirty') out[k] = r[k]; });
     return out;
   }
 
+  /* Cada tabla se sube por separado. Antes iban encadenadas, asi que una sola
+   * tabla con problemas dejaba sin subir a todas las demas: las ventas se
+   * quedaban en el celular por culpa de, por ejemplo, una tabla que todavia
+   * no existia en el servidor.
+   */
   function push() {
     if (!activo()) return Promise.resolve();
     var pendientes = tablas().filter(function (t) { return NOVA.store.sucios(t).length; });
-    if (!pendientes.length) return Promise.resolve();
+    if (!pendientes.length) { resumirFallas(); return Promise.resolve(); }
 
-    return pendientes.reduce(function (cadena, t) {
-      return cadena.then(function () {
-        var filas = NOVA.store.sucios(t);
-        if (!filas.length) return;
-        return sb.from(t).upsert(filas.map(limpiarFila), { onConflict: 'id' })
-          .then(function (r) {
-            if (r.error) throw new Error(t + ': ' + r.error.message);
-            NOVA.store.limpiarSucios(t, filas.map(function (f) { return f.id; }));
-          });
-      });
-    }, Promise.resolve())
-      .then(function () { if (estado !== 'conectado') setEstado('conectado'); avisar(); })
-      .catch(function (e) { setEstado('offline', e.message); });
+    return Promise.all(pendientes.map(function (t) {
+      var filas = NOVA.store.sucios(t);
+      return sb.from(t).upsert(filas.map(limpiarFila), { onConflict: 'id' })
+        .then(function (r) {
+          if (r.error) throw new Error(r.error.message);
+          NOVA.store.limpiarSucios(t, filas.map(function (f) { return f.id; }));
+          delete fallas[t];
+        })
+        .catch(function (e) {
+          fallas[t] = { motivo: (e && e.message) || 'error', red: esFalloDeRed(e) };
+        });
+    })).then(function () { resumirFallas(); avisar(); });
   }
 
   function pull() {
     if (!activo()) return Promise.resolve();
-    return tablas().reduce(function (cadena, t) {
-      return cadena.then(function () {
-        var desde = localStorage.getItem(SYNC_KEY + t) || '1970-01-01T00:00:00.000Z';
-        return sb.from(t).select('*').gt('updated_at', desde).order('updated_at')
-          .then(function (r) {
-            if (r.error) throw new Error(t + ': ' + r.error.message);
-            var filas = r.data || [];
-            if (filas.length) {
-              NOVA.store.aplicarRemotos(t, filas);
-              localStorage.setItem(SYNC_KEY + t, filas[filas.length - 1].updated_at);
-            }
-          });
-      });
-    }, Promise.resolve())
-      .then(function () {
-        // El ayudante no guarda historial: lo de días pasados se borra de su
-        // celular apenas termina de bajar lo nuevo.
-        if (!esDueno()) NOVA.store.purgarHistorial();
-        if (estado !== 'conectado') setEstado('conectado');
-      })
-      .catch(function (e) { setEstado('offline', e.message); });
+
+    return Promise.all(tablas().map(function (t) {
+      var desde = localStorage.getItem(SYNC_KEY + t) || '1970-01-01T00:00:00.000Z';
+      return sb.from(t).select('*').gt('updated_at', desde).order('updated_at')
+        .then(function (r) {
+          if (r.error) throw new Error(r.error.message);
+          var filas = r.data || [];
+          if (filas.length) {
+            NOVA.store.aplicarRemotos(t, filas);
+            localStorage.setItem(SYNC_KEY + t, filas[filas.length - 1].updated_at);
+          }
+          delete fallas[t];
+        })
+        .catch(function (e) {
+          fallas[t] = { motivo: (e && e.message) || 'error', red: esFalloDeRed(e) };
+        });
+    })).then(function () {
+      // El ayudante no guarda historial: lo de días pasados se borra de su
+      // celular apenas termina de bajar lo nuevo.
+      if (!esDueno()) NOVA.store.purgarHistorial();
+      resumirFallas();
+    });
+  }
+
+  /* Revisa tabla por tabla y devuelve un diagnostico legible. Sin esto, un
+   * "no sincroniza" obliga a adivinar cual de siete tablas es la que falla.
+   */
+  function diagnosticar() {
+    if (!sb) return Promise.resolve([{ tabla: '-', ok: false, motivo: 'Falta conectar el servidor.' }]);
+    if (!usuario) return Promise.resolve([{ tabla: '-', ok: false, motivo: 'No hay sesión iniciada.' }]);
+
+    return Promise.all(TABLAS_TODAS.map(function (t) {
+      return sb.from(t).select('id', { count: 'exact', head: true })
+        .then(function (r) {
+          if (r.error) return { tabla: t, ok: false, motivo: r.error.message };
+          return { tabla: t, ok: true, motivo: (r.count || 0) + ' filas' };
+        })
+        .catch(function (e) {
+          return { tabla: t, ok: false, motivo: (e && e.message) || 'error' };
+        });
+    }));
   }
 
   function sincronizar() {
@@ -327,7 +375,8 @@
     configurado: configurado, activo: activo,
     entrar: entrar, salir: salir, cambiarPassword: cambiarPassword,
     listarPerfiles: listarPerfiles, cambiarRol: cambiarRol, renombrarPerfil: renombrarPerfil,
-    sincronizar: sincronizar, agendarPush: agendarPush,
+    sincronizar: sincronizar, agendarPush: agendarPush, diagnosticar: diagnosticar,
+    fallas: function () { return fallas; },
     estado: function () { return estado; },
     error: function () { return ultimoError; },
     alCambiar: function (fn) { oyentes.push(fn); },

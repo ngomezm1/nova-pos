@@ -36,6 +36,7 @@ Son tres partes. Calculá una hora la primera vez.
    1. [`schema.sql`](supabase/schema.sql) — tablas, permisos y descuento automático de vasos
    2. [`02-historial-solo-dueno.sql`](supabase/02-historial-solo-dueno.sql) — el ayudante ve solo su turno
    3. [`03-sedes.sql`](supabase/03-sedes.sql) — varias sedes, cada una con su inventario
+   4. [`04-insumos.sql`](supabase/04-insumos.sql) — inventario de cualquier insumo, no solo vasos
 6. Andá a **Authentication** → **Providers** → **Email** y **desactivá** *Confirm email*. Así los usuarios entran sin tener que confirmar el correo.
 7. Andá a **Authentication** → **Users** → **Add user** → *Create new user*.
    - Correo y contraseña **tuyos**. Este primer usuario queda como **dueño** automáticamente.
@@ -128,6 +129,7 @@ Modificar la app en su teléfono no le sirve de nada: los permisos viven en el s
 | Cada uno paga lo suyo | **Dividir** → marcá los vasos de esa persona |
 | Cierre de la noche | **Resumen** → mirá recaudado y quién quedó debiendo |
 | Llegaron vasos nuevos | **Inventario** → **Mover** → *Entrada por compra* |
+| Querés contar algo más (pitillos, hielo, limones) | **Inventario** → **+ Agregar insumo** |
 | El conteo no cuadra | **Inventario** → **Mover** → *Conteo físico* |
 | Llevás vasos a la otra sede | **Inventario** → *Trasladar vasos a otra sede* |
 | Comparar las dos sedes | **Resumen** → pestaña **Todas** |
@@ -161,6 +163,7 @@ sw.js                   caché para trabajar sin señal
 supabase/schema.sql     tablas, permisos y descuento de vasos
 supabase/02-*.sql       el ayudante ve solo su turno
 supabase/03-sedes.sql   varias sedes con inventario propio
+supabase/04-insumos.sql insumos ademas de los vasos
 ```
 
 Sin build ni dependencias: son archivos que el navegador abre directamente.

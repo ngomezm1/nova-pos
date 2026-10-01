@@ -160,6 +160,31 @@
     return normOz(oz) === null ? n : n + ' ' + normOz(oz) + ' oz';
   }
 
+  /* Cada fila de inventario se identifica por su clave. Los vasos la derivan
+   * de tipo+oz, como siempre; los insumos traen una propia, igual en todas las
+   * sedes, para que "Limones" en una sede y en la otra sean el mismo insumo
+   * con dos conteos.
+   */
+  function claveDe(fila) {
+    return fila.clave || claveVaso(fila.tipo, fila.oz);
+  }
+
+  function etiquetaDe(fila) {
+    return fila.nombre || etiquetaVaso(fila.tipo, fila.oz);
+  }
+
+  // Unidades de medida de los insumos. 'unidad' sirve para lo que se cuenta
+  // de a uno: limones, pitillos, cervezas.
+  var UNIDADES = ['unidad', 'paquete', 'bolsa', 'botella', 'caja', 'libra', 'kilo', 'litro'];
+
+  // Reconstruye un vaso a partir de su clave, para poder crear su fila en una
+  // sede que todavia no lo tenga.
+  function vasoDesdeClave(clave) {
+    var p = String(clave || '').split('-');
+    if (p.length !== 2 || (p[0] !== 'icopor' && p[0] !== 'plastico')) return null;
+    return { tipo: p[0], oz: p[1] === 'unico' ? null : Number(p[1]) };
+  }
+
   var SEDES_BASE = ['Sede Principal', 'Sede Exterior'];
 
   function sembrar() {
@@ -188,7 +213,10 @@
     if (esDueno() && vivos('inventario').length === 0) {
       sedes().forEach(function (s) {
         VASOS.forEach(function (v) {
-          insertar('inventario', { sede_id: s.id, tipo: v.tipo, oz: v.oz, stock: 0, minimo: 20 });
+          insertar('inventario', {
+            sede_id: s.id, clave: claveVaso(v.tipo, v.oz),
+            tipo: v.tipo, oz: v.oz, stock: 0, minimo: 20
+          });
         });
       });
       cambio.push('inventario');
@@ -256,10 +284,28 @@
       datos.orden = max + 1;
       datos.activa = true;
       var nueva = insertar('sedes', datos);
-      // Una sede sin vasos cargados no sirve: se le crean las filas en cero.
+
+      // Una sede nueva arranca con todo el inventario en cero: los vasos y
+      // tambien los insumos que ya se usan en las otras sedes.
       VASOS.forEach(function (v) {
-        insertar('inventario', { sede_id: nueva.id, tipo: v.tipo, oz: v.oz, stock: 0, minimo: 20 });
+        insertar('inventario', {
+          sede_id: nueva.id, clave: claveVaso(v.tipo, v.oz),
+          tipo: v.tipo, oz: v.oz, stock: 0, minimo: 20
+        });
       });
+
+      var vistos = {};
+      vivos('inventario')
+        .filter(function (i) { return i.tipo === 'insumo'; })
+        .forEach(function (i) {
+          var k = claveDe(i);
+          if (vistos[k]) return;
+          vistos[k] = true;
+          insertar('inventario', {
+            sede_id: nueva.id, clave: k, tipo: 'insumo', oz: null,
+            nombre: i.nombre, unidad: i.unidad, stock: 0, minimo: i.minimo || 0
+          });
+        });
     }
     commit(['sedes', 'inventario']);
   }
@@ -296,96 +342,177 @@
 
   /* ---------- inventario ---------- */
 
+  var ORDEN_TIPO = { icopor: 0, plastico: 1, insumo: 2 };
+
   // Sin sedeId devuelve el inventario de todas las sedes.
   function inventario(sedeId) {
     return vivos('inventario')
       .filter(function (i) { return !sedeId || i.sede_id === sedeId; })
       .sort(function (a, b) {
-        if (a.tipo !== b.tipo) return a.tipo === 'icopor' ? -1 : 1;
+        var ta = ORDEN_TIPO[a.tipo] === undefined ? 9 : ORDEN_TIPO[a.tipo];
+        var tb = ORDEN_TIPO[b.tipo] === undefined ? 9 : ORDEN_TIPO[b.tipo];
+        if (ta !== tb) return ta - tb;
+        if (a.tipo === 'insumo') return (a.nombre || '').localeCompare(b.nombre || '');
         return (normOz(a.oz) || 0) - (normOz(b.oz) || 0);
       });
   }
 
-  function stockDe(tipo, oz, sedeId) {
-    var clave = claveVaso(tipo, oz);
+  function vasos(sedeId) {
+    return inventario(sedeId).filter(function (i) { return i.tipo !== 'insumo'; });
+  }
+
+  function insumos(sedeId) {
+    return inventario(sedeId).filter(function (i) { return i.tipo === 'insumo'; });
+  }
+
+  function stockDe(clave, sedeId) {
     var a = vivos('inventario').filter(function (i) {
-      return i.sede_id === sedeId && claveVaso(i.tipo, i.oz) === clave;
+      return i.sede_id === sedeId && claveDe(i) === clave;
     });
     return a.length ? a[0] : null;
+  }
+
+  // Cualquier fila con esa clave, sin importar la sede. Sirve para copiar el
+  // nombre y la unidad cuando hay que crearla en otra.
+  function gemelaDe(clave) {
+    return vivos('inventario').filter(function (i) { return claveDe(i) === clave; })[0] || null;
   }
 
   /* Todo movimiento de stock pertenece a una sede. Sin sede no se toca nada:
    * es preferible no mover inventario a moverlo en el lugar equivocado.
    */
-  function filaStock(sedeId, tipo, oz) {
-    var inv = stockDe(tipo, oz, sedeId);
-    if (!inv) {
-      inv = insertar('inventario', {
-        sede_id: sedeId, tipo: tipo, oz: normOz(oz), stock: 0, minimo: 20
-      });
-    }
-    return inv;
+  function filaStock(sedeId, clave) {
+    var inv = stockDe(clave, sedeId);
+    if (inv) return inv;
+
+    // Si existe en otra sede se copia de ahi; si no, solo puede ser un vaso.
+    var gemela = gemelaDe(clave);
+    var base = gemela
+      ? { tipo: gemela.tipo, oz: gemela.oz, nombre: gemela.nombre || null,
+          unidad: gemela.unidad || null, minimo: gemela.minimo }
+      : vasoDesdeClave(clave);
+    if (!base) return null;
+
+    return insertar('inventario', {
+      sede_id: sedeId, clave: clave, tipo: base.tipo, oz: normOz(base.oz),
+      nombre: base.nombre || null, unidad: base.unidad || null,
+      stock: 0, minimo: base.minimo === undefined ? 20 : base.minimo
+    });
   }
 
-  function anotarMovimiento(sedeId, tipo, oz, delta, motivo, refCuenta, nota) {
+  function anotarMovimiento(sedeId, clave, delta, motivo, refCuenta, nota) {
+    var fila = stockDe(clave, sedeId);
     insertar('movimientos', {
-      sede_id: sedeId, tipo_vaso: tipo, oz: normOz(oz), delta: delta,
-      motivo: motivo || 'ajuste', cuenta_id: refCuenta || null,
-      nota: nota || '', fecha: diaNegocio(), created_at: now()
+      sede_id: sedeId, clave: clave,
+      nombre: fila ? etiquetaDe(fila) : clave,
+      tipo_vaso: fila ? fila.tipo : 'insumo',
+      oz: fila ? normOz(fila.oz) : null,
+      delta: delta, motivo: motivo || 'ajuste',
+      cuenta_id: refCuenta || null, nota: nota || '',
+      fecha: diaNegocio(), created_at: now()
     });
   }
 
   // delta negativo = salida (venta), positivo = entrada (compra/devolución)
-  function moverStock(sedeId, tipo, oz, delta, motivo, refCuenta, nota) {
-    if (!sedeId || !tipo || !delta || !inventarioLocal()) return;
-    var inv = filaStock(sedeId, tipo, oz);
+  function moverStock(sedeId, clave, delta, motivo, refCuenta, nota) {
+    if (!sedeId || !clave || !delta || !inventarioLocal()) return;
+    var inv = filaStock(sedeId, clave);
+    if (!inv) return;
     actualizar('inventario', inv.id, { stock: (inv.stock || 0) + delta });
-    anotarMovimiento(sedeId, tipo, oz, delta, motivo, refCuenta, nota);
+    anotarMovimiento(sedeId, clave, delta, motivo, refCuenta, nota);
   }
 
-  function registrarEntrada(sedeId, tipo, oz, cantidad, nota) {
+  function registrarEntrada(sedeId, clave, cantidad, nota) {
     if (!sedeId) return;
-    var inv = filaStock(sedeId, tipo, oz);
+    var inv = filaStock(sedeId, clave);
     var n = Math.abs(Number(cantidad) || 0);
-    if (!n) return;
+    if (!inv || !n) return;
     actualizar('inventario', inv.id, { stock: (inv.stock || 0) + n });
-    anotarMovimiento(sedeId, tipo, oz, n, 'compra', null, nota);
+    anotarMovimiento(sedeId, clave, n, 'compra', null, nota);
     commit(['inventario', 'movimientos']);
   }
 
-  function ajustarStock(sedeId, tipo, oz, nuevoValor, nota) {
+  function ajustarStock(sedeId, clave, nuevoValor, nota) {
     if (!sedeId) return;
-    var inv = filaStock(sedeId, tipo, oz);
+    var inv = filaStock(sedeId, clave);
+    if (!inv) return;
     var delta = Number(nuevoValor) - (inv.stock || 0);
     if (delta === 0) return;
     actualizar('inventario', inv.id, { stock: Number(nuevoValor) });
-    anotarMovimiento(sedeId, tipo, oz, delta, 'ajuste', null, nota || 'Conteo físico');
+    anotarMovimiento(sedeId, clave, delta, 'ajuste', null, nota || 'Conteo físico');
     commit(['inventario', 'movimientos']);
   }
 
-  function registrarMerma(sedeId, tipo, oz, cantidad, nota) {
+  function registrarMerma(sedeId, clave, cantidad, nota) {
     if (!sedeId) return;
-    var inv = stockDe(tipo, oz, sedeId);
+    var inv = stockDe(clave, sedeId);
     var n = Math.abs(Number(cantidad) || 0);
     if (!inv || !n) return;
     actualizar('inventario', inv.id, { stock: (inv.stock || 0) - n });
-    anotarMovimiento(sedeId, tipo, oz, -n, 'merma', null, nota);
+    anotarMovimiento(sedeId, clave, -n, 'merma', null, nota);
     commit(['inventario', 'movimientos']);
+  }
+
+  /* ---------- insumos ---------- */
+
+  /* Un insumo nace en TODAS las sedes a la vez, cada una con su propio conteo
+   * en cero. Si naciera solo donde se creó, la otra sede no podría registrar
+   * sus compras y el insumo parecería inexistente allá.
+   */
+  function crearInsumo(datos) {
+    var nombre = (datos.nombre || '').trim();
+    if (!nombre) return null;
+
+    var clave = 'insumo-' + uid();
+    var unidad = datos.unidad || 'unidad';
+    var minimo = Number(datos.minimo) || 0;
+
+    sedesActivas().forEach(function (sd) {
+      insertar('inventario', {
+        sede_id: sd.id, clave: clave, tipo: 'insumo', oz: null,
+        nombre: nombre, unidad: unidad, stock: 0, minimo: minimo
+      });
+    });
+
+    commit(['inventario']);
+    return clave;
+  }
+
+  // El nombre y la unidad son del insumo, no de la sede: cambian en todas.
+  function guardarInsumo(clave, datos) {
+    vivos('inventario')
+      .filter(function (i) { return claveDe(i) === clave; })
+      .forEach(function (i) {
+        actualizar('inventario', i.id, {
+          nombre: (datos.nombre || i.nombre || '').trim(),
+          unidad: datos.unidad || i.unidad || 'unidad'
+        });
+      });
+    commit(['inventario']);
+  }
+
+  function eliminarInsumo(clave) {
+    vivos('inventario')
+      .filter(function (i) { return claveDe(i) === clave && i.tipo === 'insumo'; })
+      .forEach(function (i) { borrar('inventario', i.id); });
+    commit(['inventario']);
   }
 
   // Traslado entre sedes: sale de una y entra a la otra en un solo gesto,
   // que es como realmente se mueven los vasos entre locales.
-  function trasladarVasos(desdeSede, haciaSede, tipo, oz, cantidad) {
+  function trasladar(desdeSede, haciaSede, clave, cantidad) {
     var n = Math.abs(Number(cantidad) || 0);
     if (!desdeSede || !haciaSede || desdeSede === haciaSede || !n) return false;
 
-    var origen = filaStock(desdeSede, tipo, oz);
-    actualizar('inventario', origen.id, { stock: (origen.stock || 0) - n });
-    anotarMovimiento(desdeSede, tipo, oz, -n, 'traslado', null, 'Hacia ' + nombreSede(haciaSede));
+    var origen = filaStock(desdeSede, clave);
+    var destino = filaStock(haciaSede, clave);
+    if (!origen || !destino) return false;
 
-    var destino = filaStock(haciaSede, tipo, oz);
+    actualizar('inventario', origen.id, { stock: (origen.stock || 0) - n });
+    anotarMovimiento(desdeSede, clave, -n, 'traslado', null, 'Hacia ' + nombreSede(haciaSede));
+
     actualizar('inventario', destino.id, { stock: (destino.stock || 0) + n });
-    anotarMovimiento(haciaSede, tipo, oz, n, 'traslado', null, 'Desde ' + nombreSede(desdeSede));
+    anotarMovimiento(haciaSede, clave, n, 'traslado', null, 'Desde ' + nombreSede(desdeSede));
 
     commit(['inventario', 'movimientos']);
     return true;
@@ -466,7 +593,7 @@
   function cancelarCuenta(id) {
     if (pagosDe(id).length > 0) return false;
     itemsDe(id).forEach(function (it) {
-      if (it.vaso) moverStock(it.sede_id, it.vaso, it.oz, it.cantidad, 'devolucion', id, 'Cuenta cancelada');
+      if (it.vaso) moverStock(it.sede_id, claveVaso(it.vaso, it.oz), it.cantidad, 'devolucion', id, 'Cuenta cancelada');
       borrar('items', it.id);
     });
     borrar('cuentas', id);
@@ -506,7 +633,7 @@
         created_at: now(), fecha: diaNegocio()
       });
     }
-    if (p.vaso) moverStock(cuenta.sede_id, p.vaso, p.oz, -cantidad, 'venta', cuentaId, p.nombre);
+    if (p.vaso) moverStock(cuenta.sede_id, claveVaso(p.vaso, p.oz), -cantidad, 'venta', cuentaId, p.nombre);
     commit();
     return it;
   }
@@ -520,7 +647,7 @@
 
     var delta = nuevaCantidad - it.cantidad;
     if (it.vaso && delta !== 0) {
-      moverStock(it.sede_id, it.vaso, it.oz, -delta,
+      moverStock(it.sede_id, claveVaso(it.vaso, it.oz), -delta,
                  delta < 0 ? 'devolucion' : 'venta', it.cuenta_id, it.nombre);
     }
     if (nuevaCantidad === 0) borrar('items', itemId);
@@ -851,8 +978,9 @@
   global.NOVA = global.NOVA || {};
   global.NOVA.store = {
     TABLAS: TABLAS, TABLAS_SOLO_DUENO: TABLAS_SOLO_DUENO,
-    VASOS: VASOS, METODOS: METODOS, NOMBRE_VASO: NOMBRE_VASO,
+    VASOS: VASOS, METODOS: METODOS, NOMBRE_VASO: NOMBRE_VASO, UNIDADES: UNIDADES,
     normOz: normOz, claveVaso: claveVaso, etiquetaVaso: etiquetaVaso,
+    claveDe: claveDe, etiquetaDe: etiquetaDe,
     uid: uid, now: now, money: money, diaNegocio: diaNegocio,
     suscribir: function (fn) { listeners.push(fn); },
     recargar: function () { cargar(); emitir(); },
@@ -867,9 +995,11 @@
     fijarSede: fijarSede, olvidarSede: olvidarSede, nombreSede: nombreSede,
     guardarSede: guardarSede,
 
-    inventario: inventario, stockDe: stockDe, registrarEntrada: registrarEntrada,
+    inventario: inventario, vasos: vasos, insumos: insumos, stockDe: stockDe,
+    registrarEntrada: registrarEntrada,
     ajustarStock: ajustarStock, registrarMerma: registrarMerma,
-    trasladarVasos: trasladarVasos,
+    crearInsumo: crearInsumo, guardarInsumo: guardarInsumo, eliminarInsumo: eliminarInsumo,
+    trasladar: trasladar,
     fijarMinimo: fijarMinimo, alertasStock: alertasStock, movimientosDe: movimientosDe,
 
     cuentas: cuentas, cuentasAbiertas: cuentasAbiertas, cuentasCerradas: cuentasCerradas,
