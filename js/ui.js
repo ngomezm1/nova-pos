@@ -4,6 +4,8 @@
 (function (global) {
   'use strict';
 
+  NOVA.VERSION = '1.1';
+
   var S = NOVA.store;
   var C = NOVA.cloud;
 
@@ -1477,6 +1479,10 @@
           '<button class="btn btn--chico" id="bSync">Sincronizar ahora</button>' +
           '<button class="btn btn--chico" id="bDiag">Revisar conexión</button>' +
         '</div>' +
+        '<button class="btn btn--chico btn--bloque mt" id="bRepararSiempre">' +
+          'Reparar ahora</button>' +
+        '<div class="ayuda" style="margin-top:6px">Limpia copias repetidas y ' +
+          'reintenta subir lo que quedó pendiente.</div>' +
         '<div id="resDiag"></div>' +
         '<button class="btn btn--chico btn--peligro btn--fantasma btn--bloque mt" id="bSalir">' +
           'Cerrar sesión</button>';
@@ -1506,8 +1512,11 @@
         '<a class="btn btn--chico" href="guia.html" target="_blank" rel="noopener">Ver la guía</a>' +
         '<button class="btn btn--chico btn--fantasma" id="bCopiarGuia">Copiar link</button>' +
       '</div>' +
-      '<ul class="lista-simple mt"><li><span>Versión</span><b class="chico">1.0</b></li>' +
+      '<ul class="lista-simple mt"><li><span>Versión</span><b class="chico">' +
+        NOVA.VERSION + '</b></li>' +
       '<li><span>Cuentas guardadas</span><b class="chico">' + S.cuentas().length + '</b></li></ul>' +
+      '<button class="btn btn--fantasma btn--bloque btn--chico mt" id="bActualizar">' +
+        'Buscar actualización</button>' +
       (dueno ? '<button class="btn btn--fantasma btn--peligro btn--bloque btn--chico mt" id="bBorrarTodo">Borrar todos los datos de este celular</button>' : '') +
       '</div>';
 
@@ -1527,6 +1536,10 @@
     if ($('#bConectar')) $('#bConectar').onclick = hojaConectar;
     if ($('#bRepararAj')) $('#bRepararAj').onclick = function () {
       repararSync($('#bRepararAj').parentNode);
+    };
+
+    if ($('#bRepararSiempre')) $('#bRepararSiempre').onclick = function () {
+      repararSync($('#resDiag'));
     };
 
     if ($('#bDiag')) $('#bDiag').onclick = function () {
@@ -1590,6 +1603,28 @@
       } else {
         prompt('Copiá este link:', url);
       }
+    };
+
+    /* Fuerza la descarga del codigo nuevo. Sin esto hay que cerrar y abrir la
+     * app dos veces, y nunca queda claro si ya se actualizo.
+     */
+    if ($('#bActualizar')) $('#bActualizar').onclick = function () {
+      var b = $('#bActualizar');
+      b.disabled = true;
+      b.textContent = 'Buscando…';
+
+      var tareas = ['index.html', 'js/store.js', 'js/cloud.js', 'js/ui.js', 'css/style.css']
+        .map(function (f) { return fetch(f + '?v=' + Date.now(), { cache: 'reload' }); });
+
+      if (navigator.serviceWorker) {
+        tareas.push(navigator.serviceWorker.getRegistrations().then(function (rs) {
+          return Promise.all(rs.map(function (r) { return r.update(); }));
+        }));
+      }
+
+      Promise.all(tareas)
+        .catch(function () { /* sin señal: igual se recarga */ })
+        .then(function () { location.reload(); });
     };
 
     if ($('#bBorrarTodo')) $('#bBorrarTodo').onclick = function () {

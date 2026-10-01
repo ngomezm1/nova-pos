@@ -2,7 +2,7 @@
  * La app tiene que abrir aunque no haya señal en el local: el casco de la app se
  * sirve desde caché y los datos viven en localStorage.
  */
-var CACHE = 'nova-pos-v12';
+var CACHE = 'nova-pos-v13';
 
 var CASCO = [
   './',
@@ -58,7 +58,27 @@ self.addEventListener('fetch', function (e) {
     return;
   }
 
-  // Todo lo demás: caché primero, y se refresca por detrás.
+  /* El código propio va a la red primero. Con caché primero, una corrección
+    * recién llegaba en la segunda apertura: la primera servía lo viejo y solo
+    * entonces descargaba lo nuevo. Si no hay señal, se usa la copia guardada.
+    */
+  var esCodigoPropio = url.origin === location.origin
+    && /\.(js|css|html|webmanifest)$/.test(url.pathname);
+
+  if (esCodigoPropio) {
+    e.respondWith(
+      fetch(req).then(function (res) {
+        if (res && res.status === 200) {
+          var copia = res.clone();
+          caches.open(CACHE).then(function (c) { c.put(req, copia); });
+        }
+        return res;
+      }).catch(function () { return caches.match(req); })
+    );
+    return;
+  }
+
+  // Imágenes y librerías: caché primero, y se refresca por detrás.
   e.respondWith(
     caches.match(req).then(function (hit) {
       var red = fetch(req).then(function (res) {
