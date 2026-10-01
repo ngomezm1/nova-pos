@@ -4,7 +4,7 @@
 (function (global) {
   'use strict';
 
-  NOVA.VERSION = '1.1';
+  NOVA.VERSION = '1.2';
 
   var S = NOVA.store;
   var C = NOVA.cloud;
@@ -1494,16 +1494,24 @@
         '<div class="tarjeta" id="cUsuarios"><p class="chico mb0">Cargando…</p></div>';
     }
 
-    if (dueno) {
-      html += '<div class="titulo-seccion">Respaldo</div><div class="tarjeta">' +
-        '<p class="chico">Guardá una copia cada tanto. Si perdés el celular, la restaurás acá.</p>' +
-        '<div class="fila-btn mt">' +
-          '<button class="btn btn--chico" id="bExport">Descargar respaldo</button>' +
-          '<button class="btn btn--chico btn--fantasma" id="bImport">Restaurar</button>' +
-        '</div>' +
-        '<input type="file" id="fImport" accept="application/json,.json" hidden>' +
-      '</div>';
-    }
+    // Guardar copia lo puede hacer cualquiera: si hay ventas sin subir, es la
+    // unica red de seguridad. Restaurar sigue siendo solo del dueño.
+    var pendientes = S.hayPendientesDeSync();
+
+    html += '<div class="titulo-seccion">Respaldo</div><div class="tarjeta">' +
+      (pendientes
+        ? '<div class="aviso aviso--error" style="margin-bottom:12px">' +
+          '<b>Hay ventas sin subir al servidor.</b><br>' +
+          'Guardá una copia antes de cerrar sesión o desinstalar la app, ' +
+          'porque eso borra lo que todavía está en este celular.</div>'
+        : '<p class="chico">Guardá una copia cada tanto. Si perdés el celular, la restaurás acá.</p>') +
+      '<div class="fila-btn mt">' +
+        '<button class="btn btn--chico' + (pendientes ? ' btn--exito' : '') + '" id="bExport">' +
+          'Guardar copia</button>' +
+        (dueno ? '<button class="btn btn--chico btn--fantasma" id="bImport">Restaurar</button>' : '') +
+      '</div>' +
+      (dueno ? '<input type="file" id="fImport" accept="application/json,.json" hidden>' : '') +
+    '</div>';
 
     html += '<div class="titulo-seccion">La app</div><div class="tarjeta">' +
       '<p class="chico">Para instalarla en otro celular, mandá este link por WhatsApp: ' +
@@ -1576,7 +1584,9 @@
 
     if ($('#bExport')) $('#bExport').onclick = function () {
       descargar('nova-respaldo-' + S.diaNegocio() + '.json', S.exportar());
-      toast('Respaldo descargado');
+      toast(S.hayPendientesDeSync()
+        ? 'Copia guardada, incluye lo que falta subir'
+        : 'Copia guardada');
     };
     if ($('#bImport')) $('#bImport').onclick = function () { $('#fImport').click(); };
     if ($('#fImport')) $('#fImport').onchange = function () {
