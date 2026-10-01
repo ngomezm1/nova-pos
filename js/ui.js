@@ -4,7 +4,7 @@
 (function (global) {
   'use strict';
 
-  NOVA.VERSION = '1.2';
+  NOVA.VERSION = '1.3';
 
   var S = NOVA.store;
   var C = NOVA.cloud;
@@ -16,6 +16,7 @@
     verCerradas: false
   };
   var app, hojaAbierta = null;
+  var refrescoUsuarios = null;
   var modo = 'app';      // login | sede | app
 
   /* ---------- utilidades de DOM ---------- */
@@ -123,6 +124,16 @@
 
   function pantallaLogin(mensaje, tipoMensaje) {
     modo = 'login';
+
+    // Si al usuario le cortaron el acceso, decirselo en vez de dejarlo
+    // probando la contraseña creyendo que se equivoco.
+    try {
+      if (localStorage.getItem('nova.expulsado')) {
+        localStorage.removeItem('nova.expulsado');
+        mensaje = 'Tu acceso fue desactivado. Hablá con el dueño.';
+        tipoMensaje = 'error';
+      }
+    } catch (e) {}
     document.body.innerHTML =
       '<div class="login">' +
         '<img src="assets/logo.jpg" alt="NOVA">' +
@@ -1490,8 +1501,12 @@
     html += '</div>';
 
     if (dueno && cfg && C.activo()) {
-      html += '<div class="titulo-seccion">Usuarios</div>' +
-        '<div class="tarjeta" id="cUsuarios"><p class="chico mb0">Cargando…</p></div>';
+      html += '<div class="titulo-seccion">Quién tiene acceso</div>' +
+        '<div class="tarjeta" id="cUsuarios"><p class="chico mb0">Cargando…</p></div>' +
+        '<button class="btn btn--fantasma btn--peligro btn--bloque btn--chico" id="bCerrarTodas">' +
+          'Cerrar mi sesión en todos mis aparatos</button>' +
+        '<div class="ayuda" style="margin-top:6px">Útil al entregar el negocio: ' +
+          'invalida cualquier sesión tuya que haya quedado abierta en otro teléfono.</div>';
     }
 
     // Guardar copia lo puede hacer cualquiera: si hay ventas sin subir, es la
@@ -1644,7 +1659,37 @@
         .then(function (ok) { if (ok) { S.limpiarTodo(); location.reload(); } });
     };
 
-    if ($('#cUsuarios')) cargarUsuarios();
+    if ($('#bCerrarTodas')) $('#bCerrarTodas').onclick = function () {
+      confirmar('¿Cerrar tu sesión en todos lados?',
+        'Vas a tener que volver a entrar con tu correo y contraseña, acá y en ' +
+        'cualquier otro aparato donde hayas dejado la sesión abierta.',
+        'Cerrar todas', 'btn--peligro')
+        .then(function (ok) {
+          if (!ok) return;
+          C.cerrarTodasMisSesiones()
+            .then(function () { location.reload(); })
+            .catch(function (e) { toast(e.message); });
+        });
+    };
+
+    if ($('#cUsuarios')) {
+      cargarUsuarios();
+      // La presencia envejece sola: sin refresco diria "conectado ahora"
+      // varios minutos despues de que la persona cerro la app.
+      clearInterval(refrescoUsuarios);
+      refrescoUsuarios = setInterval(function () {
+        if ($('#cUsuarios')) cargarUsuarios(); else clearInterval(refrescoUsuarios);
+      }, 30000);
+    }
+  }
+
+  // Conectado = dio señales de vida en los ultimos 2 minutos. La app late
+  // cada vez que sincroniza, o sea cada 20 segundos.
+  function presencia(p) {
+    if (!p.visto_en) return { txt: 'nunca entró', clase: '' };
+    var min = (Date.now() - new Date(p.visto_en).getTime()) / 60000;
+    if (min < 2) return { txt: 'conectado ahora', clase: 'ok' };
+    return { txt: haceRato(p.visto_en), clase: '' };
   }
 
   function cargarUsuarios() {
@@ -1652,27 +1697,81 @@
       var cont = $('#cUsuarios');
       if (!cont) return;
       var yo = NOVA.sesion.usuario();
-      cont.innerHTML = '<ul class="lista-simple">' + lista.map(function (p) {
-        return '<li><span>' + esc(p.nombre || p.email || 'Sin nombre') +
-          (yo && p.id === yo.id ? ' <span class="chico">(vos)</span>' : '') +
-          '<br><span class="chico">' + esc(p.email || '') + '</span></span>' +
-          '<select data-rol="' + p.id + '" style="min-height:38px;padding:4px 8px;border-radius:9px;background:rgba(0,0,0,.35);border:1px solid var(--linea)">' +
-            '<option value="ayudante"' + (p.rol === 'ayudante' ? ' selected' : '') + '>Ayudante</option>' +
-            '<option value="dueno"' + (p.rol === 'dueno' ? ' selected' : '') + '>Dueño</option>' +
-          '</select></li>';
-      }).join('') + '</ul>' +
-      '<p class="chico mt">Para agregar un ayudante, creale el usuario en el panel de Supabase ' +
+
+      cont.innerHTML = lista.map(function (p) {
+        var soyYo = yo && p.id === yo.id;
+        var pr = presencia(p);
+        var apagado = p.activo === false;
+
+        return '<div class="usuario' + (apagado ? ' usuario--off' : '') + '">' +
+          '<div class="usuario__top">' +
+            '<div style="flex:1;min-width:0">' +
+              '<div class="item__nombre">' + esc(p.nombre || p.email || 'Sin nombre') +
+                (soyYo ? ' <span class="chico">(vos)</span>' : '') + '</div>' +
+              '<div class="item__meta">' + esc(p.email || '') + '</div>' +
+              '<div class="item__meta">' +
+                (apagado
+                  ? '<span class="etiqueta etiqueta--aviso">acceso desactivado</span>'
+                  : '<span class="punto-presencia ' + pr.clase + '"></span>' + esc(pr.txt)) +
+                (p.dispositivo ? ' · ' + esc(p.dispositivo) : '') +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="fila-btn mt">' +
+            '<select data-rol="' + p.id + '"' + (soyYo ? ' disabled' : '') + '>' +
+              '<option value="ayudante"' + (p.rol === 'ayudante' ? ' selected' : '') + '>Ayudante</option>' +
+              '<option value="dueno"' + (p.rol === 'dueno' ? ' selected' : '') + '>Dueño</option>' +
+            '</select>' +
+            (soyYo
+              ? '<button class="btn btn--chico btn--fantasma" disabled>—</button>'
+              : '<button class="btn btn--chico ' +
+                (apagado ? 'btn--exito' : 'btn--peligro btn--fantasma') +
+                '" data-activo="' + p.id + '" data-valor="' + (apagado ? '1' : '0') + '">' +
+                (apagado ? 'Reactivar' : 'Quitar acceso') + '</button>') +
+          '</div>' +
+        '</div>';
+      }).join('') +
+      '<p class="chico mt">Quitar el acceso cierra la sesión de esa persona ' +
+      'en todos sus aparatos y le borra los datos del negocio del celular.</p>' +
+      '<p class="chico">Para agregar a alguien, creale el usuario en Supabase ' +
       '(Authentication → Add user) y acá le asignás el rol.</p>';
 
-      $$('[data-rol]', cont).forEach(function (s) {
-        s.onchange = function () {
-          C.cambiarRol(s.dataset.rol, s.value)
+      $$('[data-rol]', cont).forEach(function (sel) {
+        sel.onchange = function () {
+          C.cambiarRol(sel.dataset.rol, sel.value)
             .then(function () { toast('Rol actualizado'); })
             .catch(function (e) { toast(e.message); cargarUsuarios(); });
         };
       });
+
+      $$('[data-activo]', cont).forEach(function (b) {
+        b.onclick = function () {
+          var prender = b.dataset.valor === '1';
+          var quien = b.closest('.usuario').querySelector('.item__nombre').textContent.trim();
+
+          if (prender) {
+            C.cambiarActivo(b.dataset.activo, true)
+              .then(function () { toast('Acceso reactivado'); cargarUsuarios(); })
+              .catch(function (e) { toast(e.message); });
+            return;
+          }
+
+          confirmar('¿Quitarle el acceso a ' + quien + '?',
+            'Su sesión se cierra en todos sus aparatos y los datos del negocio ' +
+            'se borran de su celular. Las ventas que ya subió no se tocan. ' +
+            'Podés reactivarlo cuando quieras.',
+            'Quitar acceso', 'btn--peligro')
+            .then(function (ok) {
+              if (!ok) return;
+              C.cambiarActivo(b.dataset.activo, false)
+                .then(function () { toast('Acceso retirado'); cargarUsuarios(); })
+                .catch(function (e) { toast(e.message); });
+            });
+        };
+      });
     }).catch(function (e) {
-      if ($('#cUsuarios')) $('#cUsuarios').innerHTML = '<p class="chico mb0">No se pudo cargar: ' + esc(e.message) + '</p>';
+      if ($('#cUsuarios')) $('#cUsuarios').innerHTML =
+        '<p class="chico mb0">No se pudo cargar: ' + esc(e.message) + '</p>';
     });
   }
 

@@ -40,6 +40,19 @@
 
   /* ---------- configuración ---------- */
 
+  /* Un nombre aproximado del aparato. No identifica a nadie: solo sirve para
+   * que el dueño distinga "iPhone" de "Windows" al mirar quién está conectado.
+   */
+  function nombreDispositivo() {
+    var ua = navigator.userAgent || '';
+    if (/iPhone/i.test(ua)) return 'iPhone';
+    if (/iPad/i.test(ua)) return 'iPad';
+    if (/Android/i.test(ua)) return 'Android';
+    if (/Windows/i.test(ua)) return 'Windows';
+    if (/Mac OS X/i.test(ua)) return 'Mac';
+    return 'Otro';
+  }
+
   function cfg() {
     try { return JSON.parse(localStorage.getItem(CFG_KEY) || 'null'); } catch (e) { return null; }
   }
@@ -207,6 +220,33 @@
     }
     return sb.from('perfiles').update({ rol: rol }).eq('id', id).then(function (r) {
       if (r.error) throw new Error(r.error.message);
+      return true;
+    });
+  }
+
+  function cambiarActivo(id, activo_) {
+    if (!sb) return Promise.reject(new Error('Sin conexión.'));
+    if (id === (usuario && usuario.id)) {
+      return Promise.reject(new Error('No podés desactivarte a vos mismo.'));
+    }
+    return sb.from('perfiles').update({ activo: !!activo_ }).eq('id', id).then(function (r) {
+      if (r.error) throw new Error(r.error.message);
+      return true;
+    });
+  }
+
+  /* Cierra la sesión de este usuario en TODOS sus aparatos. Es lo que hay que
+   * usar al entregar el proyecto: aunque alguien tuviera la contraseña vieja
+   * guardada en un teléfono, esa sesión deja de servir.
+   */
+  function cerrarTodasMisSesiones() {
+    if (!sb) return Promise.reject(new Error('Sin conexión.'));
+    return sb.auth.signOut({ scope: 'global' }).then(function (r) {
+      if (r && r.error) throw new Error(r.error.message);
+      pararSync();
+      usuario = null; perfil = null;
+      NOVA.store.limpiarTodo();
+      setEstado('local');
       return true;
     });
   }
@@ -400,8 +440,37 @@
     }));
   }
 
+  /* Avisa que este celular sigue vivo y, de paso, relee el propio perfil. Si
+   * el dueño desactivó esta cuenta, la sesión se cierra acá mismo en vez de
+   * seguir mostrando datos que el servidor ya no entrega.
+   */
+  function latir() {
+    if (!activo()) return Promise.resolve();
+
+    return sb.rpc('tocar_presencia', { p_dispositivo: nombreDispositivo() })
+      .then(function () {
+        return sb.from('perfiles').select('*').eq('id', usuario.id).single();
+      })
+      .then(function (r) {
+        if (r.error || !r.data) return;
+        perfil = r.data;
+        if (perfil.activo === false) return expulsar();
+      })
+      .catch(function () { /* sin señal: el proximo intento lo resuelve */ });
+  }
+
+  /* El dueño corto el acceso: se cierra sesion y se limpia el celular. Dejar
+   * los datos ahi seria justo lo que se quiso evitar al desactivar.
+   */
+  function expulsar() {
+    return salir(true).then(function () {
+      try { localStorage.setItem('nova.expulsado', '1'); } catch (e) {}
+      location.reload();
+    });
+  }
+
   function sincronizar() {
-    return push().then(pull);
+    return push().then(pull).then(latir);
   }
 
   function agendarPush() {
@@ -468,6 +537,8 @@
     configurado: configurado, activo: activo,
     entrar: entrar, salir: salir, cambiarPassword: cambiarPassword,
     listarPerfiles: listarPerfiles, cambiarRol: cambiarRol, renombrarPerfil: renombrarPerfil,
+    cambiarActivo: cambiarActivo, cerrarTodasMisSesiones: cerrarTodasMisSesiones,
+    latir: latir,
     sincronizar: sincronizar, agendarPush: agendarPush, diagnosticar: diagnosticar,
     repararYReintentar: repararYReintentar,
     ultimoError: errorGuardado, olvidarUltimoError: olvidarUltimoError,

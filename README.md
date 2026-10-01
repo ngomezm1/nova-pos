@@ -37,6 +37,7 @@ Son tres partes. Calculá una hora la primera vez.
    2. [`02-historial-solo-dueno.sql`](supabase/02-historial-solo-dueno.sql) — el ayudante ve solo su turno
    3. [`03-sedes.sql`](supabase/03-sedes.sql) — varias sedes, cada una con su inventario
    4. [`04-insumos.sql`](supabase/04-insumos.sql) — inventario de cualquier insumo, no solo vasos
+   5. [`05-sesiones.sql`](supabase/05-sesiones.sql) — ver quién está conectado y poder quitarle el acceso
 6. Andá a **Authentication** → **Providers** → **Email** y **desactivá** *Confirm email*. Así los usuarios entran sin tener que confirmar el correo.
 7. Andá a **Authentication** → **Users** → **Add user** → *Create new user*.
    - Correo y contraseña **tuyos**. Este primer usuario queda como **dueño** automáticamente.
@@ -110,6 +111,9 @@ No es una pantalla escondida: es el servidor el que decide.
   era "hoy" se borra de su celular al día siguiente.
 - Nadie puede borrar cuentas, ítems ni pagos: se marcan como anulados y queda el rastro.
 - Cuando cierra sesión, los datos del negocio se borran de ese celular.
+- **El dueño puede quitarle el acceso a cualquiera** desde Ajustes → Quién tiene acceso.
+  La sesión se cierra en todos sus aparatos y el celular se limpia, sin importar que
+  tuviera la app abierta: la base de datos deja de entregarle datos.
 
 Modificar la app en su teléfono no le sirve de nada: los permisos viven en el servidor.
 

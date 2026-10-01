@@ -920,6 +920,44 @@ main {
 .stock__cant.ok { color: var(--lima); }
 .stock__nota { font-size: 11px; color: var(--texto-3); }
 
+/* ---------------- usuarios y presencia ---------------- */
+
+.usuario {
+  padding: 13px 0;
+  border-bottom: 1px solid rgba(160, 120, 255, .12);
+}
+
+.usuario:last-of-type { border-bottom: 0; }
+.usuario--off { opacity: .55; }
+.usuario__top { display: flex; align-items: flex-start; gap: 12px; }
+
+.usuario select {
+  min-height: 40px;
+  padding: 4px 10px;
+  border-radius: 11px;
+  background: rgba(0, 0, 0, .35);
+  border: 1px solid var(--linea);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.usuario select:disabled { opacity: .45; }
+
+.punto-presencia {
+  display: inline-block;
+  width: 7px; height: 7px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--texto-3);
+  vertical-align: middle;
+}
+
+.punto-presencia.ok {
+  background: var(--lima);
+  box-shadow: 0 0 8px var(--lima);
+  animation: pulso 1.8s ease-in-out infinite;
+}
+
 /* ---------------- estado de sincronización ---------------- */
 
 .sync {
