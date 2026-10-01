@@ -30,6 +30,7 @@
   var canal = null;
   var oyentes = [];
   var fallas = {};          // tabla -> motivo del ultimo fallo
+  var reintentando = false; // evita que la reconciliacion se llame en bucle
 
   /* ---------- configuración ---------- */
 
@@ -264,7 +265,20 @@
         .catch(function (e) {
           fallas[t] = { motivo: (e && e.message) || 'error', red: esFalloDeRed(e) };
         });
-    })).then(function () { resumirFallas(); avisar(); });
+    })).then(function () {
+      // Un nombre repetido no se arregla reintentando: hay una copia local de
+      // algo que el servidor ya tiene. Se reconcilia y se reintenta una vez.
+      var duplicados = Object.keys(fallas).some(function (t) {
+        return /duplicate key|already exists/i.test(fallas[t].motivo);
+      });
+      if (duplicados && !reintentando && NOVA.store.reconciliar()) {
+        reintentando = true;
+        fallas = {};
+        return push().then(function () { reintentando = false; });
+      }
+      resumirFallas();
+      avisar();
+    });
   }
 
   function pull() {
@@ -323,7 +337,12 @@
   }
 
   function arrancarSync() {
-    sincronizar();
+    // Primero bajar lo del servidor y recien despues subir: asi la
+    // reconciliacion sabe cuales filas son las buenas.
+    pull().then(function () {
+      NOVA.store.reconciliar();
+      return push();
+    });
     clearInterval(pullTimer);
     // Red de seguridad por si el canal en vivo se cae.
     pullTimer = setInterval(function () { if (navigator.onLine) sincronizar(); }, 20000);

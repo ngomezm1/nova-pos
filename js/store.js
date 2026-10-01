@@ -933,6 +933,126 @@
     return hubo;
   }
 
+  /* ---------- reconciliacion con el servidor ---------- */
+
+  /* Quita filas locales sin avisarle al servidor. A diferencia de borrar(),
+   * no las marca como borradas: desaparecen de este celular y punto, porque
+   * son copias de algo que ya existe alla con otro id.
+   */
+  function descartarLocal(tabla, ids) {
+    var fuera = {};
+    ids.forEach(function (id) { fuera[id] = true; });
+    state[tabla] = (state[tabla] || []).filter(function (r) { return !fuera[r.id]; });
+    guardarTabla(tabla);
+  }
+
+  // Dónde se guarda una referencia a cada tabla, para repuntarla al id bueno.
+  var REFERENCIAS = {
+    productos: [['items', 'producto_id']],
+    sedes: [['cuentas', 'sede_id'], ['items', 'sede_id'], ['pagos', 'sede_id'],
+            ['inventario', 'sede_id'], ['movimientos', 'sede_id']]
+  };
+
+  /* Junta las filas de `tabla` que comparten nombre y deja una sola: gana la
+   * que vino del servidor, porque es la que el resto de los celulares ya
+   * conoce. Las referencias se repuntan a ella.
+   */
+  function reconciliarPorNombre(tabla) {
+    var grupos = {};
+    (state[tabla] || []).forEach(function (r) {
+      if (r.deleted) return;
+      var k = (r.nombre || '').trim().toLowerCase();
+      if (!k) return;
+      (grupos[k] = grupos[k] || []).push(r);
+    });
+
+    var mapa = {}, sobran = [];
+    Object.keys(grupos).forEach(function (k) {
+      var g = grupos[k];
+      if (g.length < 2) return;
+      // La fila ya subida no tiene marca de pendiente: esa es la del servidor.
+      var bueno = g.filter(function (r) { return !r._dirty; })[0] || g[0];
+      g.forEach(function (r) {
+        if (r.id === bueno.id) return;
+        mapa[r.id] = bueno.id;
+        sobran.push(r.id);
+      });
+    });
+
+    if (!sobran.length) return 0;
+
+    (REFERENCIAS[tabla] || []).forEach(function (par) {
+      var otra = par[0], campo = par[1];
+      (state[otra] || []).forEach(function (r) {
+        if (mapa[r[campo]]) { r[campo] = mapa[r[campo]]; r._dirty = true; }
+        });
+      guardarTabla(otra);
+    });
+
+    // La sede elegida en este celular puede ser una de las descartadas.
+    if (tabla === 'sedes') {
+      var actual = localStorage.getItem(SEDE_KEY);
+      if (actual && mapa[actual]) localStorage.setItem(SEDE_KEY, mapa[actual]);
+    }
+
+    descartarLocal(tabla, sobran);
+    return sobran.length;
+  }
+
+  /* El inventario no se identifica por nombre sino por (sede, clave), que es
+   * justo la unicidad que impone el servidor.
+   */
+  function reconciliarInventario() {
+    var grupos = {};
+    (state.inventario || []).forEach(function (r) {
+      if (r.deleted || !r.sede_id) return;
+      var k = r.sede_id + '|' + claveDe(r);
+      (grupos[k] = grupos[k] || []).push(r);
+    });
+
+    var sobran = [];
+    Object.keys(grupos).forEach(function (k) {
+      var g = grupos[k];
+      if (g.length < 2) return;
+      var bueno = g.filter(function (r) { return !r._dirty; })[0] || g[0];
+
+      g.forEach(function (r) {
+        if (r.id === bueno.id) return;
+        // Si se contó stock en el celular antes de conectar, ese número es el
+        // real: la fila del servidor viene en cero y hay que conservarlo.
+        if ((r.stock || 0) !== 0 && (bueno.stock || 0) === 0) {
+          actualizar('inventario', bueno.id, { stock: r.stock, minimo: r.minimo });
+        }
+        sobran.push(r.id);
+      });
+    });
+
+    if (!sobran.length) return 0;
+    descartarLocal('inventario', sobran);
+    return sobran.length;
+  }
+
+  /* Se corre al sincronizar. Devuelve cuántas filas se limpiaron. */
+  function reconciliar() {
+    var n = reconciliarPorNombre('productos') + reconciliarPorNombre('sedes');
+    n += reconciliarInventario();
+
+    // Inventario y movimientos de antes de que existieran las sedes: sin sede
+    // no se pueden ubicar, y el servidor ya tiene las filas buenas.
+    ['inventario', 'movimientos'].forEach(function (t) {
+      var huerfanas = (state[t] || [])
+        .filter(function (r) { return !r.sede_id; })
+        .map(function (r) { return r.id; });
+      if (huerfanas.length) {
+        descartarLocal(t, huerfanas);
+        n += huerfanas.length;
+      }
+    });
+
+    if (n) emitir();
+    return n;
+  }
+
   function hayPendientesDeSync() {
     return TABLAS.some(function (t) { return sucios(t).length > 0; });
   }
@@ -1017,6 +1137,7 @@
     limpiarTodo: limpiarTodo, purgarHistorial: purgarHistorial,
 
     sucios: sucios, limpiarSucios: limpiarSucios, aplicarRemotos: aplicarRemotos,
+    reconciliar: reconciliar, descartarLocal: descartarLocal,
     hayPendientesDeSync: hayPendientesDeSync
   };
 })(window);
