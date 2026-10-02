@@ -38,6 +38,7 @@ Son tres partes. Calculá una hora la primera vez.
    3. [`03-sedes.sql`](supabase/03-sedes.sql) — varias sedes, cada una con su inventario
    4. [`04-insumos.sql`](supabase/04-insumos.sql) — inventario de cualquier insumo, no solo vasos
    5. [`05-sesiones.sql`](supabase/05-sesiones.sql) — ver quién está conectado y poder quitarle el acceso
+   6. [`06-consumo.sql`](supabase/06-consumo.sql) — que cada producto elija qué insumo descuenta
 6. Andá a **Authentication** → **Providers** → **Email** y **desactivá** *Confirm email*. Así los usuarios entran sin tener que confirmar el correo.
 7. Andá a **Authentication** → **Users** → **Add user** → *Create new user*.
    - Correo y contraseña **tuyos**. Este primer usuario queda como **dueño** automáticamente.

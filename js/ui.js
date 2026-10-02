@@ -4,7 +4,7 @@
 (function (global) {
   'use strict';
 
-  NOVA.VERSION = '1.3';
+  NOVA.VERSION = '1.4';
 
   var S = NOVA.store;
   var C = NOVA.cloud;
@@ -351,26 +351,45 @@
   /* Repara y deja el resultado escrito en pantalla. El badge de arriba cambia
    * cada pocos segundos y no se alcanza a leer; esto se queda quieto.
    */
+  /* Muestra el resultado y lo DEJA ahí. La versión anterior repintaba la
+   * pantalla a los 1,8 segundos y el mensaje desaparecía antes de poder
+   * leerlo, que es justo lo que uno necesita de un botón así.
+   */
   function repararSync(donde) {
     var caja = donde || $('#avisoSync');
     if (!caja) return;
-    caja.innerHTML = '<b>Reparando…</b>';
+
+    caja.className = 'aviso aviso--info';
+    caja.innerHTML = '<b>Revisando…</b>';
 
     C.repararYReintentar().then(function (r) {
       if (r.ok) {
-        caja.outerHTML = '<div class="aviso aviso--ok">' +
-          '<b>Listo, quedó sincronizado.</b>' +
-          (r.limpiadas ? '<br><span class="chico" style="color:inherit">Se limpiaron ' +
-            plural(r.limpiadas, 'copia repetida', 'copias repetidas') + '.</span>' : '') +
-          '</div>';
-        setTimeout(render, 1800);
+        var queHizo;
+        if (r.subidas) {
+          queHizo = 'Se subieron ' + plural(r.subidas, 'registro', 'registros') + '.';
+        } else if (r.habia) {
+          queHizo = 'Quedaba ' + plural(r.habia, 'registro', 'registros') + ' y ya está arriba.';
+        } else {
+          queHizo = 'No había nada pendiente: ya estaba todo guardado en el servidor.';
+        }
+
+        caja.className = 'aviso aviso--ok';
+        caja.innerHTML = '<b>Todo en orden.</b><br>' +
+          '<span class="chico" style="color:inherit">' + esc(queHizo) +
+          (r.limpiadas ? ' Se limpiaron ' +
+            esc(plural(r.limpiadas, 'copia repetida', 'copias repetidas')) + '.' : '') +
+          '</span>' +
+          '<button class="btn btn--chico btn--bloque mt" id="bCerrarAviso">Entendido</button>';
       } else {
+        caja.className = 'aviso aviso--error';
         caja.innerHTML = '<b>Sigue fallando.</b><br>' +
           '<span class="chico" style="color:inherit;opacity:.85;word-break:break-word">' +
             esc(r.detalle || 'Sin detalle') + '</span>' +
           '<button class="btn btn--chico btn--bloque mt" id="bReparar">Reintentar</button>';
-        if ($('#bReparar')) $('#bReparar').onclick = function () { repararSync(caja); };
       }
+
+      if ($('#bReparar')) $('#bReparar').onclick = function () { repararSync(caja); };
+      if ($('#bCerrarAviso')) $('#bCerrarAviso').onclick = function () { render(); };
     });
   }
 
@@ -1470,7 +1489,12 @@
             return '<li data-prodedit="' + p.id + '" style="cursor:pointer">' +
               '<span>' + esc(p.nombre) +
                 (p.activo === false ? ' <span class="etiqueta etiqueta--aviso">oculto</span>' : '') +
-                '<br><span class="chico">' + (p.vaso ? esc(S.etiquetaVaso(p.vaso, p.oz)) : 'sin vaso') + '</span></span>' +
+                '<br><span class="chico">' + (function () {
+                  var k = S.claveConsumo(p);
+                  if (!k) return 'no descuenta inventario';
+                  var f = S.inventario().filter(function (i) { return S.claveDe(i) === k; })[0];
+                  return f ? 'descuenta ' + esc(S.etiquetaDe(f)) : 'descuenta ' + esc(k);
+                })() + '</span></span>' +
               '<b style="color:' + (p.precio ? 'var(--lima)' : 'var(--rojo)') + '">' +
                 (p.precio ? S.money(p.precio) : 'sin precio') + '</b></li>';
           }).join('') + '</ul>' +
@@ -1817,7 +1841,8 @@
 
   function editarProducto(p) {
     var nuevo = !p;
-    p = p || { nombre: '', categoria: 'otro', oz: 16, precio: 0, vaso: 'plastico', activo: true };
+    p = p || { nombre: '', categoria: 'otro', oz: null, precio: 0, vaso: null, activo: true };
+    var consumoActual = S.claveConsumo(p);
     var cats = [['cremoso', 'Granizado cremoso'], ['original', 'Granizado original'],
                 ['michelada', 'Michelada'], ['coctel', 'Coctel'], ['otro', 'Otro']];
 
@@ -1830,17 +1855,20 @@
         cats.map(function (c) {
           return '<option value="' + c[0] + '"' + (p.categoria === c[0] ? ' selected' : '') + '>' + c[1] + '</option>';
         }).join('') + '</select></div>' +
-      '<div class="campo"><label>Vaso que consume</label><select id="qV">' +
-        '<option value="">Ninguno</option>' +
-        '<option value="icopor"' + (p.vaso === 'icopor' ? ' selected' : '') + '>Icopor</option>' +
-        '<option value="plastico"' + (p.vaso === 'plastico' ? ' selected' : '') + '>Plástico</option>' +
-      '</select><div class="ayuda">Cada venta descuenta uno de estos del inventario.</div></div>' +
-      '<div class="campo" id="campoOz"><label>Tamaño</label><select id="qO">' +
+      '<div class="campo"><label>Qué descuenta del inventario</label><select id="qV">' +
+        '<option value="">Nada</option>' +
+        S.opcionesConsumo().map(function (o) {
+          return '<option value="' + esc(o.clave) + '"' +
+            (consumoActual === o.clave ? ' selected' : '') + '>' + esc(o.etiqueta) + '</option>';
+        }).join('') +
+      '</select><div class="ayuda">Cada venta descuenta uno. Podés elegir un vaso ' +
+      'o cualquier insumo que hayas creado en Inventario.</div></div>' +
+      '<div class="campo" id="campoOz"><label>Tamaño que se muestra en el botón</label><select id="qO">' +
         '<option value="">Sin tamaño</option>' +
         [8, 12, 16, 24].map(function (o) {
           return '<option value="' + o + '"' + (Number(p.oz) === o ? ' selected' : '') + '>' + o + ' oz</option>';
         }).join('') + '</select>' +
-        '<div class="ayuda">El vaso plástico es uno solo, así que no lleva tamaño.</div></div>' +
+        '<div class="ayuda">Solo decora el botón de venta. No afecta el inventario.</div></div>' +
       (!nuevo ? '<div class="campo"><label>Mostrar en la grilla de venta</label><select id="qA">' +
         '<option value="1"' + (p.activo !== false ? ' selected' : '') + '>Sí</option>' +
         '<option value="0"' + (p.activo === false ? ' selected' : '') + '>No, ocultar</option></select></div>' : '') +
@@ -1848,17 +1876,6 @@
       (!nuevo ? '<button class="btn btn--fantasma btn--peligro btn--bloque btn--chico mt" id="qD">Eliminar producto</button>' : ''),
       function (h) {
         var selVaso = $('#qV', h), selOz = $('#qO', h);
-
-        // El plástico no tiene tamaños: el selector se apaga para que no
-        // quede un producto apuntando a una fila de inventario que no existe.
-        function ajustarTamano() {
-          var esPlastico = selVaso.value === 'plastico';
-          if (esPlastico) selOz.value = '';
-          selOz.disabled = esPlastico;
-          $('#campoOz', h).style.opacity = esPlastico ? '.45' : '';
-        }
-        selVaso.onchange = ajustarTamano;
-        ajustarTamano();
 
         $('#qG', h).onclick = function () {
           var nombre = $('#qN', h).value.trim();
@@ -1868,7 +1885,7 @@
             nombre: nombre,
             precio: Number($('#qP', h).value) || 0,
             categoria: $('#qC', h).value,
-            vaso: selVaso.value || null,
+            consume: selVaso.value || null,
             oz: selOz.value === '' ? null : Number(selOz.value),
             activo: $('#qA', h) ? $('#qA', h).value === '1' : true
           });

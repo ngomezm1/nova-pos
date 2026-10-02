@@ -173,6 +173,28 @@
     return fila.nombre || etiquetaVaso(fila.tipo, fila.oz);
   }
 
+  /* Qué descuenta del inventario este producto (o esta línea de venta).
+   * `consume` es la forma nueva; vaso+oz queda como respaldo para lo que se
+   * creó antes de que los productos pudieran apuntar a cualquier insumo.
+   */
+  function claveConsumo(x) {
+    if (!x) return null;
+    if (x.consume) return x.consume;
+    return x.vaso ? claveVaso(x.vaso, x.oz) : null;
+  }
+
+  // Todo lo que un producto puede descontar, una entrada por clave.
+  function opcionesConsumo() {
+    var vistas = {}, out = [];
+    inventario().forEach(function (i) {
+      var k = claveDe(i);
+      if (vistas[k]) return;
+      vistas[k] = true;
+      out.push({ clave: k, etiqueta: etiquetaDe(i), tipo: i.tipo });
+    });
+    return out;
+  }
+
   // Unidades de medida de los insumos. 'unidad' sirve para lo que se cuenta
   // de a uno: limones, pitillos, cervezas.
   var UNIDADES = ['unidad', 'paquete', 'bolsa', 'botella', 'caja', 'libra', 'kilo', 'litro'];
@@ -321,9 +343,19 @@
   }
 
   function guardarProducto(datos) {
-    // El vaso plástico no tiene tamaño: se guarda sin onzas para que empate
-    // con su única fila de inventario.
-    datos.oz = datos.vaso === 'plastico' ? null : normOz(datos.oz);
+    // Si lo que descuenta es un vaso, se sincroniza vaso+oz para que el resto
+    // de la app (y lo ya guardado) lo siga entendiendo igual.
+    if (datos.consume !== undefined) {
+      var inv = gemelaDe(datos.consume);
+      if (inv && inv.tipo !== 'insumo') {
+        datos.vaso = inv.tipo;
+        datos.oz = normOz(inv.oz);
+      } else {
+        datos.vaso = null;
+      }
+    }
+    if (datos.vaso === 'plastico') datos.oz = null;
+    else if (datos.vaso) datos.oz = normOz(datos.oz);
     if (datos.id) {
       actualizar('productos', datos.id, datos);
     } else {
@@ -504,7 +536,7 @@
    */
   function productosQueUsan(clave) {
     return productosActivos().filter(function (p) {
-      return p.vaso && claveVaso(p.vaso, p.oz) === clave;
+      return claveConsumo(p) === clave;
     });
   }
 
@@ -615,7 +647,8 @@
   function cancelarCuenta(id) {
     if (pagosDe(id).length > 0) return false;
     itemsDe(id).forEach(function (it) {
-      if (it.vaso) moverStock(it.sede_id, claveVaso(it.vaso, it.oz), it.cantidad, 'devolucion', id, 'Cuenta cancelada');
+      var cIt = claveConsumo(it);
+      if (cIt) moverStock(it.sede_id, cIt, it.cantidad, 'devolucion', id, 'Cuenta cancelada');
       borrar('items', it.id);
     });
     borrar('cuentas', id);
@@ -650,12 +683,14 @@
         cuenta_id: cuentaId, producto_id: productoId, nombre: p.nombre,
         precio: p.precio, cantidad: cantidad, pagadas: 0,
         vaso: p.vaso || null, oz: p.oz || null,
+        consume: claveConsumo(p),
         sede_id: cuenta.sede_id,
         vendido_por: quien(),
         created_at: now(), fecha: diaNegocio()
       });
     }
-    if (p.vaso) moverStock(cuenta.sede_id, claveVaso(p.vaso, p.oz), -cantidad, 'venta', cuentaId, p.nombre);
+    var consumo = claveConsumo(p);
+    if (consumo) moverStock(cuenta.sede_id, consumo, -cantidad, 'venta', cuentaId, p.nombre);
     commit();
     return it;
   }
@@ -668,8 +703,9 @@
     if (nuevaCantidad < (it.pagadas || 0)) return false;
 
     var delta = nuevaCantidad - it.cantidad;
-    if (it.vaso && delta !== 0) {
-      moverStock(it.sede_id, claveVaso(it.vaso, it.oz), -delta,
+    var consumoIt = claveConsumo(it);
+    if (consumoIt && delta !== 0) {
+      moverStock(it.sede_id, consumoIt, -delta,
                  delta < 0 ? 'devolucion' : 'venta', it.cuenta_id, it.nombre);
     }
     if (nuevaCantidad === 0) borrar('items', itemId);
@@ -804,9 +840,15 @@
 
     var vasosUsados = {};
     itemsDia.forEach(function (i) {
-      if (!i.vaso) return;
-      var k = claveVaso(i.vaso, i.oz);
-      if (!vasosUsados[k]) vasosUsados[k] = { etiqueta: etiquetaVaso(i.vaso, i.oz), cant: 0 };
+      var k = claveConsumo(i);
+      if (!k) return;
+      if (!vasosUsados[k]) {
+        var fila = gemelaDe(k);
+        vasosUsados[k] = {
+          etiqueta: fila ? etiquetaDe(fila) : etiquetaVaso(i.vaso, i.oz),
+          cant: 0
+        };
+      }
       vasosUsados[k].cant += i.cantidad;
     });
 
@@ -1123,6 +1165,7 @@
     VASOS: VASOS, METODOS: METODOS, NOMBRE_VASO: NOMBRE_VASO, UNIDADES: UNIDADES,
     normOz: normOz, claveVaso: claveVaso, etiquetaVaso: etiquetaVaso,
     claveDe: claveDe, etiquetaDe: etiquetaDe,
+    claveConsumo: claveConsumo, opcionesConsumo: opcionesConsumo,
     uid: uid, now: now, money: money, diaNegocio: diaNegocio,
     suscribir: function (fn) { listeners.push(fn); },
     recargar: function () { cargar(); emitir(); },

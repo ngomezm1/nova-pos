@@ -400,24 +400,38 @@
   /* Reparacion manual: reconcilia, reintenta aunque este en pausa y devuelve
    * el resultado para mostrarlo quieto en pantalla, no en un badge que cambia.
    */
+  function contarPendientes() {
+    return TABLAS_TODAS.reduce(function (n, t) {
+      return n + (NOVA.store.sucios(t) || []).length;
+    }, 0);
+  }
+
   function repararYReintentar() {
     pausado = false;
     seguidas = 0;
     fallasPush = {};
     fallasPull = {};
 
+    var antes = contarPendientes();
     var limpiadas = NOVA.store.reconciliar();
 
     return pull()
       .then(function () { return push(true); })
+      .then(latir)
       .then(function () {
         var rotas = Object.keys(fallasPush).concat(Object.keys(fallasPull));
+        var despues = contarPendientes();
         return {
           limpiadas: limpiadas,
+          subidas: Math.max(0, antes - despues),
+          habia: antes,
+          quedan: despues,
           ok: rotas.length === 0,
-          detalle: rotas.length ? ((errorGuardado() || {}).detalle || ultimoError) : '',
-          pendientes: NOVA.store.hayPendientesDeSync()
+          detalle: rotas.length ? ((errorGuardado() || {}).detalle || ultimoError) : ''
         };
+      })
+      .catch(function (e) {
+        return { ok: false, detalle: (e && e.message) || 'Error inesperado', limpiadas: 0 };
       });
   }
 
@@ -540,7 +554,7 @@
     cambiarActivo: cambiarActivo, cerrarTodasMisSesiones: cerrarTodasMisSesiones,
     latir: latir,
     sincronizar: sincronizar, agendarPush: agendarPush, diagnosticar: diagnosticar,
-    repararYReintentar: repararYReintentar,
+    repararYReintentar: repararYReintentar, contarPendientes: contarPendientes,
     ultimoError: errorGuardado, olvidarUltimoError: olvidarUltimoError,
     pausado: function () { return pausado; },
     estado: function () { return estado; },
