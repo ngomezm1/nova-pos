@@ -183,6 +183,14 @@
     return x.vaso ? claveVaso(x.vaso, x.oz) : null;
   }
 
+  /* Cuántas unidades del inventario se van por cada venta. Es 1 salvo en las
+   * promos: un 2x1 se cobra una vez pero saca dos vasos.
+   */
+  function cantConsumo(x) {
+    var n = Number(x && x.consume_cant);
+    return n > 0 ? n : 1;
+  }
+
   // Todo lo que un producto puede descontar, una entrada por clave.
   function opcionesConsumo() {
     var vistas = {}, out = [];
@@ -392,6 +400,65 @@
 
   function eliminarProducto(id) {
     borrar('productos', id);
+    commit(['productos']);
+  }
+
+  /* ---------- promociones 2x1 ---------- */
+
+  // Solo granizados: una michelada 2x1 tendria que definirse aparte.
+  var CATEGORIAS_PROMO = ['cremoso', 'original'];
+
+  function promos2x1() {
+    return productos().filter(function (p) { return p.categoria === 'promo'; });
+  }
+
+  function hay2x1Activo() {
+    return promos2x1().some(function (p) { return p.activo !== false; });
+  }
+
+  /* Crea las que falten y pone al dia las que ya existen. Si el dueño cambia
+   * el precio de un granizado, su 2x1 tiene que seguirlo: cobran lo mismo.
+   */
+  function sincronizarPromos2x1() {
+    var existentes = {};
+    promos2x1().forEach(function (p) { if (p.base_id) existentes[p.base_id] = p; });
+
+    productos()
+      .filter(function (p) {
+        return CATEGORIAS_PROMO.indexOf(p.categoria) !== -1 && claveConsumo(p);
+      })
+      .forEach(function (base) {
+        var nombre = '2x1 ' + base.nombre;
+        var ya = existentes[base.id];
+
+        if (ya) {
+          actualizar('productos', ya.id, {
+            nombre: nombre, precio: base.precio, oz: base.oz,
+            vaso: base.vaso, consume: claveConsumo(base), consume_cant: 2
+          });
+          return;
+        }
+
+        insertar('productos', {
+          nombre: nombre, categoria: 'promo', base_id: base.id,
+          precio: base.precio, oz: base.oz, vaso: base.vaso,
+          consume: claveConsumo(base), consume_cant: 2,
+          orden: 100 + (base.orden || 0),
+          activo: false
+        });
+      });
+
+    commit(['productos']);
+  }
+
+  /* El 2x1 es por día: se prende en la mañana y se apaga al terminar. Las
+   * ventas ya hechas no se tocan, solo deja de ofrecerse.
+   */
+  function activar2x1(encendido) {
+    sincronizarPromos2x1();
+    promos2x1().forEach(function (p) {
+      actualizar('productos', p.id, { activo: !!encendido });
+    });
     commit(['productos']);
   }
 
@@ -671,7 +738,10 @@
     if (pagosDe(id).length > 0) return false;
     itemsDe(id).forEach(function (it) {
       var cIt = claveConsumo(it);
-      if (cIt) moverStock(it.sede_id, cIt, it.cantidad, 'devolucion', id, 'Cuenta cancelada');
+      if (cIt) {
+        moverStock(it.sede_id, cIt, it.cantidad * cantConsumo(it),
+                   'devolucion', id, 'Cuenta cancelada');
+      }
       borrar('items', it.id);
     });
     borrar('cuentas', id);
@@ -707,13 +777,17 @@
         precio: p.precio, cantidad: cantidad, pagadas: 0,
         vaso: p.vaso || null, oz: p.oz || null,
         consume: claveConsumo(p),
+        consume_cant: cantConsumo(p),
         sede_id: cuenta.sede_id,
         vendido_por: quien(),
         created_at: now(), fecha: diaNegocio()
       });
     }
     var consumo = claveConsumo(p);
-    if (consumo) moverStock(cuenta.sede_id, consumo, -cantidad, 'venta', cuentaId, p.nombre);
+    if (consumo) {
+      moverStock(cuenta.sede_id, consumo, -cantidad * cantConsumo(p),
+                 'venta', cuentaId, p.nombre);
+    }
     commit();
     return it;
   }
@@ -728,7 +802,7 @@
     var delta = nuevaCantidad - it.cantidad;
     var consumoIt = claveConsumo(it);
     if (consumoIt && delta !== 0) {
-      moverStock(it.sede_id, consumoIt, -delta,
+      moverStock(it.sede_id, consumoIt, -delta * cantConsumo(it),
                  delta < 0 ? 'devolucion' : 'venta', it.cuenta_id, it.nombre);
     }
     if (nuevaCantidad === 0) borrar('items', itemId);
@@ -872,7 +946,7 @@
           cant: 0
         };
       }
-      vasosUsados[k].cant += i.cantidad;
+      vasosUsados[k].cant += i.cantidad * cantConsumo(i);
     });
 
     // Deuda viva: todo lo que sigue sin pagarse, sin importar el día en que se pidió.
@@ -1188,7 +1262,9 @@
     VASOS: VASOS, METODOS: METODOS, NOMBRE_VASO: NOMBRE_VASO, UNIDADES: UNIDADES,
     normOz: normOz, claveVaso: claveVaso, etiquetaVaso: etiquetaVaso,
     claveDe: claveDe, etiquetaDe: etiquetaDe,
-    claveConsumo: claveConsumo, opcionesConsumo: opcionesConsumo,
+    claveConsumo: claveConsumo, cantConsumo: cantConsumo, opcionesConsumo: opcionesConsumo,
+    promos2x1: promos2x1, hay2x1Activo: hay2x1Activo, activar2x1: activar2x1,
+    sincronizarPromos2x1: sincronizarPromos2x1,
     uid: uid, now: now, money: money, diaNegocio: diaNegocio,
     suscribir: function (fn) { listeners.push(fn); },
     recargar: function () { cargar(); emitir(); },

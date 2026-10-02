@@ -41,6 +41,7 @@ Son tres partes. Calculá una hora la primera vez.
    4. [`04-insumos.sql`](supabase/04-insumos.sql) — inventario de cualquier insumo, no solo vasos
    5. [`05-sesiones.sql`](supabase/05-sesiones.sql) — ver quién está conectado y poder quitarle el acceso
    6. [`06-consumo.sql`](supabase/06-consumo.sql) — que cada producto elija qué insumo descuenta
+   7. [`07-promos.sql`](supabase/07-promos.sql) — que una venta pueda descontar más de una unidad (2x1)
 6. Andá a **Authentication** → **Providers** → **Email** y **desactivá** *Confirm email*. Así los usuarios entran sin tener que confirmar el correo.
 7. Andá a **Authentication** → **Users** → **Add user** → *Create new user*.
    - Correo y contraseña **tuyos**. Este primer usuario queda como **dueño** automáticamente.
@@ -137,6 +138,7 @@ Modificar la app en su teléfono no le sirve de nada: los permisos viven en el s
 | Cierre de la noche | **Resumen** → mirá recaudado y quién quedó debiendo |
 | Llegaron vasos nuevos | **Inventario** → **Mover** → *Entrada por compra* |
 | Querés contar algo más (pitillos, hielo, limones) | **Inventario** → **+ Agregar insumo** |
+| Es día de dos por uno | **Ajustes** → **Promoción 2x1** → *Encender*. Al terminar, apagalo |
 | El conteo no cuadra | **Inventario** → **Mover** → *Conteo físico* |
 | Llevás vasos a la otra sede | **Inventario** → *Trasladar vasos a otra sede* |
 | Comparar las dos sedes | **Resumen** → pestaña **Todas** |

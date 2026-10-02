@@ -4,7 +4,7 @@
 (function (global) {
   'use strict';
 
-  NOVA.VERSION = '1.5';
+  NOVA.VERSION = '1.6';
 
   var S = NOVA.store;
   var C = NOVA.cloud;
@@ -639,6 +639,7 @@
     html += '<div class="titulo-seccion">Agregar al pedido</div>';
     var prods = S.productosActivos();
     var cats = [
+      { id: 'promo', txt: '2x1 \u00b7 pagás uno, llevás dos' },
       { id: 'cremoso', txt: 'Granizados cremosos' },
       { id: 'original', txt: 'Granizados originales' },
       { id: 'michelada', txt: 'Micheladas' },
@@ -655,7 +656,9 @@
             (p.oz ? '<div class="prod__nombre">' + esc(p.nombre.replace(/\s*\d+\s*oz$/i, '')) + '</div>' : '') +
             '<div class="prod__precio' + (p.precio > 0 ? '' : ' sin') + '">' +
               (p.precio > 0 ? S.money(p.precio) : 'Definí el precio') + '</div>' +
-            (p.vaso ? '<div class="prod__eco">' + (p.vaso === 'icopor' ? 'icopor' : 'plást.') + '</div>' : '') +
+            (S.cantConsumo(p) > 1
+              ? '<div class="prod__eco" style="color:var(--ambar)">2 vasos</div>'
+              : (p.vaso ? '<div class="prod__eco">' + (p.vaso === 'icopor' ? 'icopor' : 'plást.') + '</div>' : '')) +
           '</button>';
         }).join('') + '</div></div>';
     });
@@ -1487,6 +1490,19 @@
         '<button class="btn btn--fantasma btn--bloque btn--chico mt" id="bNuevaSede">+ Agregar sede</button>' +
         '</div>';
 
+      var promoOn = S.hay2x1Activo();
+      html += '<div class="titulo-seccion">Promoción 2x1</div>' +
+        '<div class="tarjeta">' +
+          '<p class="chico">Para los días de dos por uno. Se cobra el precio de ' +
+          'un granizado y se descuentan dos vasos. Solo cremosos y originales.</p>' +
+          '<button class="btn btn--bloque mt ' + (promoOn ? 'btn--exito' : '') + '" id="bPromo2x1">' +
+            (promoOn ? '2x1 ENCENDIDO · tocá para apagar' : 'Encender el 2x1 de hoy') + '</button>' +
+          (promoOn
+            ? '<div class="ayuda" style="margin-top:6px">Los 2x1 aparecen primero en la ' +
+              'pantalla de venta. Acordate de apagarlo al terminar el día.</div>'
+            : '') +
+        '</div>';
+
       html += '<div class="titulo-seccion">Productos y precios</div>' +
         '<div class="tarjeta"><ul class="lista-simple">' +
           S.productos().map(function (p) {
@@ -1497,7 +1513,9 @@
                   var k = S.claveConsumo(p);
                   if (!k) return 'no descuenta inventario';
                   var f = S.inventario().filter(function (i) { return S.claveDe(i) === k; })[0];
-                  return f ? 'descuenta ' + esc(S.etiquetaDe(f)) : 'descuenta ' + esc(k);
+                  var cuantos = S.cantConsumo(p);
+                  var etiqueta = f ? esc(S.etiquetaDe(f)) : esc(k);
+                  return 'descuenta ' + (cuantos > 1 ? cuantos + ' × ' : '') + etiqueta;
                 })() + '</span></span>' +
               '<b style="color:' + (p.precio ? 'var(--lima)' : 'var(--rojo)') + '">' +
                 (p.precio ? S.money(p.precio) : 'sin precio') + '</b></li>';
@@ -1582,6 +1600,13 @@
     $$('[data-sedeedit]', m).forEach(function (li) {
       li.onclick = function () { editarSede(S.buscar('sedes', li.dataset.sedeedit)); };
     });
+    if ($('#bPromo2x1')) $('#bPromo2x1').onclick = function () {
+      var prender = !S.hay2x1Activo();
+      S.activar2x1(prender);
+      toast(prender ? '2x1 encendido' : '2x1 apagado');
+      render();
+    };
+
     if ($('#bNuevaSede')) $('#bNuevaSede').onclick = function () { editarSede(null); };
     if ($('#bNuevoProd')) $('#bNuevoProd').onclick = function () { editarProducto(null); };
     if ($('#bConectar')) $('#bConectar').onclick = hojaConectar;
@@ -1870,7 +1895,8 @@
     p = p || { nombre: '', categoria: 'otro', oz: null, precio: 0, vaso: null, activo: true };
     var consumoActual = S.claveConsumo(p);
     var cats = [['cremoso', 'Granizado cremoso'], ['original', 'Granizado original'],
-                ['michelada', 'Michelada'], ['coctel', 'Coctel'], ['otro', 'Otro']];
+                ['michelada', 'Michelada'], ['coctel', 'Coctel'],
+                ['promo', 'Promoción 2x1'], ['otro', 'Otro']];
 
     abrirHoja(
       '<h2>' + (nuevo ? 'Nuevo producto' : esc(p.nombre)) + '</h2>' +
@@ -1889,6 +1915,10 @@
         }).join('') +
       '</select><div class="ayuda">Cada venta descuenta uno. Podés elegir un vaso ' +
       'o cualquier insumo que hayas creado en Inventario.</div></div>' +
+      '<div class="campo"><label>Cuántas unidades descuenta por venta</label>' +
+        '<input id="qCC" type="number" inputmode="numeric" min="1" max="20" value="' +
+          S.cantConsumo(p) + '">' +
+        '<div class="ayuda">Normalmente 1. Un 2x1 descuenta 2.</div></div>' +
       '<div class="campo" id="campoOz"><label>Tamaño que se muestra en el botón</label><select id="qO">' +
         '<option value="">Sin tamaño</option>' +
         [8, 12, 16, 24].map(function (o) {
@@ -1912,6 +1942,7 @@
             precio: Number($('#qP', h).value) || 0,
             categoria: $('#qC', h).value,
             consume: selVaso.value || null,
+            consume_cant: Math.max(1, Number($('#qCC', h).value) || 1),
             oz: selOz.value === '' ? null : Number(selOz.value),
             activo: $('#qA', h) ? $('#qA', h).value === '1' : true
           });
