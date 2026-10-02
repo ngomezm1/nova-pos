@@ -4,7 +4,7 @@
 (function (global) {
   'use strict';
 
-  NOVA.VERSION = '1.4';
+  NOVA.VERSION = '1.5';
 
   var S = NOVA.store;
   var C = NOVA.cloud;
@@ -234,7 +234,9 @@
 
   function arrancarApp() {
     S.sembrar();
-    if (!S.sedeActual()) return pantallaSede(false);
+    // sedeActual() ya elige sola cuando queda una única sede activa.
+    if (!S.sedeActual() && S.hayQueElegirSede()) return pantallaSede(false);
+    if (!S.sedeActual()) return pantallaSede(false);   // todavía no bajaron las sedes
     montarApp();
   }
 
@@ -320,10 +322,12 @@
           (porCobrar > 0 ? ' · por cobrar ' + S.money(porCobrar) : '') +
         '</p>' +
       '</div>' +
-      '<button class="chip-sede" id="bSede" title="Cambiar de sede">Cambiar</button>' +
+      (S.hayQueElegirSede()
+        ? '<button class="chip-sede" id="bSede" title="Cambiar de sede">Cambiar</button>'
+        : '') +
       badgeSync();
 
-    $('#bSede').onclick = pedirCambioDeSede;
+    if ($('#bSede')) $('#bSede').onclick = pedirCambioDeSede;
   }
 
   /* Banner rojo cuando el servidor rechaza los datos. Un fallo de red se
@@ -1810,10 +1814,11 @@
       '<div class="campo"><label>Nombre</label>' +
         '<input id="sN" value="' + esc(sd.nombre) + '" maxlength="40" placeholder="Ej: Sede Norte"></div>' +
       (!nueva ? '<div class="campo"><label>Estado</label><select id="sA">' +
-        '<option value="1"' + (sd.activa !== false ? ' selected' : '') + '>Activa</option>' +
-        '<option value="0"' + (sd.activa === false ? ' selected' : '') + '>Inactiva (ya no se usa)</option>' +
-        '</select><div class="ayuda">Una sede inactiva deja de aparecer al elegir dónde registrar, ' +
-        'pero su historial se conserva.</div></div>' : '') +
+        '<option value="1"' + (sd.activa !== false ? ' selected' : '') + '>Abierta</option>' +
+        '<option value="0"' + (sd.activa === false ? ' selected' : '') + '>Cerrada por ahora</option>' +
+        '</select><div class="ayuda">Una sede cerrada deja de aparecer al elegir dónde ' +
+        'registrar, así no se puede vender ahí por error. Su inventario e historial ' +
+        'se conservan intactos y la podés reabrir cuando quieras.</div></div>' : '') +
       '<button class="btn btn--primario btn--bloque" id="sG">Guardar</button>' +
       (!nueva && !esActual
         ? '<button class="btn btn--fantasma btn--bloque btn--chico mt" id="sUsar">Registrar en esta sede</button>'
@@ -1822,11 +1827,32 @@
         $('#sG', h).onclick = function () {
           var nombre = $('#sN', h).value.trim();
           if (!nombre) return toast('Ponele nombre');
-          S.guardarSede({
-            id: sd.id, nombre: nombre,
-            activa: $('#sA', h) ? $('#sA', h).value === '1' : true
-          });
-          cerrarHoja(); toast('Guardado');
+
+          var quedaAbierta = $('#sA', h) ? $('#sA', h).value === '1' : true;
+          var seCierra = !nueva && !quedaAbierta && sd.activa !== false;
+
+          function guardar() {
+            S.guardarSede({ id: sd.id, nombre: nombre, activa: quedaAbierta });
+            cerrarHoja();
+            toast(quedaAbierta ? 'Guardado' : nombre + ' quedó cerrada');
+            render();
+          }
+
+          // Cerrar una sede esconde sus cuentas abiertas: si alguien quedó
+          // debiendo ahí, esa plata desaparece de la vista sin aviso.
+          var deuda = seCierra ? S.deudaEnSede(sd.id) : [];
+          if (deuda.length) {
+            var total = deuda.reduce(function (t, x) { return t + x.saldo; }, 0);
+            cerrarHoja();
+            return confirmar('Hay cuentas sin cobrar ahí',
+              esc(plural(deuda.length, 'cuenta debe', 'cuentas deben')) + ' ' +
+              S.money(total) + ' en ' + nombre + '. Si la cerrás, esas cuentas ' +
+              'dejan de verse hasta que la reabras.',
+              'Cerrar igual', 'btn--peligro')
+              .then(function (ok) { if (ok) guardar(); });
+          }
+
+          guardar();
         };
         if ($('#sUsar', h)) $('#sUsar', h).onclick = function () {
           cerrarHoja();

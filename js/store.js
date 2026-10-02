@@ -274,10 +274,33 @@
 
   function sedeActual() {
     var id = localStorage.getItem(SEDE_KEY);
-    if (!id) return null;
-    var s = buscar('sedes', id);
-    // Si la sede se borró o se desactivó, hay que volver a elegir.
-    return (s && !s.deleted && s.activa !== false) ? s : null;
+    var s = id ? buscar('sedes', id) : null;
+    if (s && !s.deleted && s.activa !== false) return s;
+
+    /* La guardada ya no sirve (se desactivó o se borró). Si quedó una sola
+     * sede activa no hay nada que preguntar: se usa esa. Preguntar con una
+     * única opción solo agrega un toque donde puede colarse un error.
+     */
+    var activas = sedesActivas();
+    if (activas.length === 1) {
+      localStorage.setItem(SEDE_KEY, activas[0].id);
+      return activas[0];
+    }
+    return null;
+  }
+
+  // Hay algo que elegir solo si hay más de una sede abierta.
+  function hayQueElegirSede() {
+    return sedesActivas().length > 1;
+  }
+
+  /* Cuentas abiertas con saldo en una sede. Antes de cerrarla hay que saber
+   * si deja plata sin cobrar escondida.
+   */
+  function deudaEnSede(sedeId) {
+    return cuentasAbiertas(sedeId)
+      .map(function (c) { return { cuenta: c, saldo: saldoCuenta(c.id) }; })
+      .filter(function (x) { return x.saldo > 0; });
   }
 
   function fijarSede(id) {
@@ -1178,7 +1201,8 @@
 
     sedes: sedes, sedesActivas: sedesActivas, sedeActual: sedeActual,
     fijarSede: fijarSede, olvidarSede: olvidarSede, nombreSede: nombreSede,
-    guardarSede: guardarSede,
+    guardarSede: guardarSede, hayQueElegirSede: hayQueElegirSede,
+    deudaEnSede: deudaEnSede,
 
     inventario: inventario, vasos: vasos, insumos: insumos, stockDe: stockDe,
     registrarEntrada: registrarEntrada,

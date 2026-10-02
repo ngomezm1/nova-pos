@@ -18,7 +18,9 @@ Funciona como app en el celular, sin costo de licencia y sin servidor propio.
 
 El día contable corta a las **5 de la mañana**: lo que vendas a la 1 am cuenta para la noche anterior.
 
-Vienen creadas **Sede Principal** y **Sede Exterior**. Se renombran o se agregan más en Ajustes → Sedes.
+Vienen creadas **Sede Principal** y **Sede Exterior**. Se renombran, se agregan o se cierran
+temporalmente en Ajustes → Sedes. Con una sola sede abierta la app no pregunta dónde
+registrar: entra directo y no muestra el botón de cambiar.
 
 ---
 
