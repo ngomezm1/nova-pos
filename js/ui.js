@@ -4,7 +4,7 @@
 (function (global) {
   'use strict';
 
-  NOVA.VERSION = '1.8';
+  NOVA.VERSION = '1.9';
 
   var S = NOVA.store;
   var C = NOVA.cloud;

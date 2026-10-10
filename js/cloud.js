@@ -320,6 +320,20 @@
     }
   }
 
+  // Las tablas del trabajo diario se guardan por funcion del servidor: un
+  // upsert normal necesita LEER la fila que modifica, y el ayudante no puede
+  // leer el historial. Ver supabase/10-guardar-sin-leer.sql.
+  var POR_FUNCION = ['cuentas', 'items', 'pagos'];
+
+  function guardar(tabla, filas) {
+    var limpias = filas.map(limpiarFila);
+
+    if (POR_FUNCION.indexOf(tabla) === -1) {
+      return sb.from(tabla).upsert(limpias, { onConflict: 'id' });
+    }
+    return sb.rpc('guardar_filas', { p_tabla: tabla, p_filas: limpias });
+  }
+
   function limpiarFila(r) {
     var out = {};
     Object.keys(r).forEach(function (k) { if (k !== '_dirty') out[k] = r[k]; });
@@ -340,7 +354,7 @@
 
     return Promise.all(pendientes.map(function (t) {
       var filas = NOVA.store.sucios(t);
-      return sb.from(t).upsert(filas.map(limpiarFila), { onConflict: 'id' })
+      return guardar(t, filas)
         .then(function (r) {
           if (r.error) throw new Error(r.error.message);
           NOVA.store.limpiarSucios(t, filas.map(function (f) { return f.id; }));
@@ -407,7 +421,7 @@
 
     return filas.reduce(function (cadena, f) {
       return cadena.then(function () {
-        return sb.from(tabla).upsert([limpiarFila(f)], { onConflict: 'id' })
+        return guardar(tabla, [f])
           .then(function (r) {
             if (r.error) { malas.push(f); motivo = r.error.message; }
             else buenas.push(f.id);
