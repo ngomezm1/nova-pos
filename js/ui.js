@@ -4,7 +4,7 @@
 (function (global) {
   'use strict';
 
-  NOVA.VERSION = '1.6';
+  NOVA.VERSION = '1.7';
 
   var S = NOVA.store;
   var C = NOVA.cloud;
@@ -128,9 +128,13 @@
     // Si al usuario le cortaron el acceso, decirselo en vez de dejarlo
     // probando la contraseña creyendo que se equivoco.
     try {
-      if (localStorage.getItem('nova.expulsado')) {
+      var expulsado = localStorage.getItem('nova.expulsado');
+      if (expulsado) {
         localStorage.removeItem('nova.expulsado');
-        mensaje = 'Tu acceso fue desactivado. Hablá con el dueño.';
+        mensaje = expulsado === 'pendiente'
+          ? 'Tu acceso fue desactivado y quedaron ventas sin subir. ' +
+            'No cierres ni borres la app: se suben solas cuando el dueño te reactive.'
+          : 'Tu acceso fue desactivado. Hablá con el dueño.';
         tipoMensaje = 'error';
       }
     } catch (e) {}
@@ -1811,8 +1815,9 @@
 
           confirmar('¿Quitarle el acceso a ' + quien + '?',
             'Su sesión se cierra en todos sus aparatos y los datos del negocio ' +
-            'se borran de su celular. Las ventas que ya subió no se tocan. ' +
-            'Podés reactivarlo cuando quieras.',
+            'se borran de su celular. Si tuviera ventas sin subir, esas se ' +
+            'conservan y suben cuando lo reactives. ' +
+            'Conviene hacerlo con el turno cerrado y todo sincronizado.',
             'Quitar acceso', 'btn--peligro')
             .then(function (ok) {
               if (!ok) return;

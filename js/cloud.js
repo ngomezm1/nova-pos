@@ -346,7 +346,13 @@
           delete fallasPush[t];
         })
         .catch(function (e) {
-          fallasPush[t] = { motivo: (e && e.message) || 'error', red: esFalloDeRed(e) };
+          if (esFalloDeRed(e)) {
+            fallasPush[t] = { motivo: e.message, red: true };
+            return;
+          }
+          // El bloque entero se rechazó por culpa de alguna fila. Se reintenta
+          // una por una para que una venta mala no frene a las demás.
+          return subirUnaPorUna(t, filas, e);
         });
     })).then(function () {
       // Un nombre repetido no se arregla reintentando: hay una copia local de
@@ -368,6 +374,34 @@
 
       resumirFallas();
       avisar();
+    });
+  }
+
+  /* Sube las filas de a una. Las que pasan quedan arriba; las que no, se
+   * cuentan y se nombra el motivo. Sin esto, una sola fila rechazada dejaba
+   * todas las ventas del turno en el celular.
+   */
+  function subirUnaPorUna(tabla, filas, errorOriginal) {
+    var buenas = [], malas = [], motivo = (errorOriginal && errorOriginal.message) || 'error';
+
+    return filas.reduce(function (cadena, f) {
+      return cadena.then(function () {
+        return sb.from(tabla).upsert([limpiarFila(f)], { onConflict: 'id' })
+          .then(function (r) {
+            if (r.error) { malas.push(f); motivo = r.error.message; }
+            else buenas.push(f.id);
+          })
+          .catch(function (e) { malas.push(f); motivo = (e && e.message) || motivo; });
+      });
+    }, Promise.resolve()).then(function () {
+      if (buenas.length) NOVA.store.limpiarSucios(tabla, buenas);
+
+      if (!malas.length) { delete fallasPush[tabla]; return; }
+
+      fallasPush[tabla] = {
+        motivo: motivo + ' (' + malas.length + ' de ' + filas.length + ' filas)',
+        red: false
+      };
     });
   }
 
@@ -477,8 +511,17 @@
    * los datos ahi seria justo lo que se quiso evitar al desactivar.
    */
   function expulsar() {
-    return salir(true).then(function () {
-      try { localStorage.setItem('nova.expulsado', '1'); } catch (e) {}
+    /* Si quedaron ventas sin subir, el celular es la ÚNICA copia: el servidor
+     * ya no las acepta porque esta cuenta está desactivada. Borrarlas sería
+     * perder plata registrada. Se cierra la sesión pero se conservan hasta
+     * que el dueño reactive el acceso y puedan subir.
+     */
+    var pendiente = NOVA.store.hayPendientesDeSync();
+
+    return salir(!pendiente).then(function () {
+      try {
+        localStorage.setItem('nova.expulsado', pendiente ? 'pendiente' : '1');
+      } catch (e) {}
       location.reload();
     });
   }
