@@ -106,30 +106,14 @@ $$;
 grant execute on function public.guardar_filas(text, jsonb) to authenticated;
 
 -- ----------------------------------------------------- comprobación --------
--- Repite el caso que fallaba: el ayudante cobrando una cuenta vieja.
--- Va dentro de una transacción que se deshace; no guarda nada.
+-- OJO: el editor de Supabase corre todo el script en UNA transacción. Una
+-- prueba que termine en rollback deshace también la creación de la función,
+-- y queda la ilusión de que funcionó. Por eso acá solo se consulta.
 
-begin;
+notify pgrst, 'reload schema';
 
-insert into public.cuentas (nombre, nota, estado, fecha, sede_id, creada_por, closed_at)
-select 'PRUEBA VIEJA', '', 'cerrada', public.dia_negocio() - 1,
-       (select id from public.sedes where not deleted limit 1), 'asesor1', now()
- where not exists (
-   select 1 from public.cuentas
-    where not deleted and estado = 'cerrada' and fecha < public.dia_negocio());
-
-select set_config('nova.fila',
-         (select to_jsonb(c)::text from public.cuentas c
-           where not c.deleted and c.estado = 'cerrada' and c.fecha < public.dia_negocio()
-           limit 1), true),
-       set_config('request.jwt.claims',
-         json_build_object('sub', (select id::text from public.perfiles
-                                    where rol = 'ayudante' limit 1),
-                           'role', 'authenticated')::text, true);
-
-set local role authenticated;
-
-select public.guardar_filas('cuentas',
-         jsonb_build_array(current_setting('nova.fila')::jsonb)) as resultado;
-
-rollback;
+select p.proname as funcion,
+       pg_get_function_arguments(p.oid) as parametros
+  from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname = 'public' and p.proname = 'guardar_filas';
