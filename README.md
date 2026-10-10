@@ -43,6 +43,7 @@ Son tres partes. Calculá una hora la primera vez.
    6. [`06-consumo.sql`](supabase/06-consumo.sql) — que cada producto elija qué insumo descuenta
    7. [`07-promos.sql`](supabase/07-promos.sql) — que una venta pueda descontar más de una unidad (2x1)
    8. [`08-permiso-escritura.sql`](supabase/08-permiso-escritura.sql) — que el ayudante pueda registrar el cobro de una cuenta vieja
+   9. [`09-diagnostico.sql`](supabase/09-diagnostico.sql) — que la app pueda preguntar al servidor cómo la ve
 6. Andá a **Authentication** → **Providers** → **Email** y **desactivá** *Confirm email*. Así los usuarios entran sin tener que confirmar el correo.
 7. Andá a **Authentication** → **Users** → **Add user** → *Create new user*.
    - Correo y contraseña **tuyos**. Este primer usuario queda como **dueño** automáticamente.

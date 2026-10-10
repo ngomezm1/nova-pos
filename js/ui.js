@@ -4,7 +4,7 @@
 (function (global) {
   'use strict';
 
-  NOVA.VERSION = '1.7';
+  NOVA.VERSION = '1.8';
 
   var S = NOVA.store;
   var C = NOVA.cloud;
@@ -1625,20 +1625,64 @@
     if ($('#bDiag')) $('#bDiag').onclick = function () {
       var caja = $('#resDiag');
       caja.innerHTML = '<p class="chico mt">Revisando…</p>';
-      C.diagnosticar().then(function (filas) {
+
+      C.miEstado().then(function (yo) {
+        var rech = C.rechazadas();
+
+        var cabecera = yo.error
+          ? '<div class="aviso aviso--error mt"><b>El servidor no respondió:</b><br>' +
+            '<span class="chico" style="color:inherit">' + esc(yo.error) + '</span></div>'
+          : '<div class="tarjeta mt"><div class="chico" style="margin-bottom:8px">' +
+            '<b>Así te ve el servidor</b></div><ul class="lista-simple">' +
+              '<li><span>Te reconoce</span><b class="chico" style="color:' +
+                (yo.uid ? 'var(--lima)' : 'var(--rojo)') + '">' +
+                (yo.uid ? 'sí' : 'NO — sesión vencida') + '</b></li>' +
+              '<li><span>Rol</span><b class="chico">' + esc(yo.rol_app || '—') + '</b></li>' +
+              '<li><span>Acceso habilitado</span><b class="chico" style="color:' +
+                (yo.habilitado ? 'var(--lima)' : 'var(--rojo)') + '">' +
+                (yo.habilitado ? 'sí' : 'NO') + '</b></li>' +
+              '<li><span>Día del servidor</span><b class="chico">' +
+                esc(yo.dia_negocio || '—') + '</b></li>' +
+            '</ul></div>';
+
+        var rechazo = rech.length
+          ? '<div class="aviso aviso--error mt"><b>' +
+            plural(rech.length, 'fila rechazada', 'filas rechazadas') + '</b>' +
+            rech.slice(0, 5).map(function (r) {
+              return '<br><span class="chico" style="color:inherit;word-break:break-word">' +
+                esc(r.tabla) + ': ' + esc(r.resumen) + '</span>';
+            }).join('') +
+            '<button class="btn btn--chico btn--bloque mt" id="bCopiarRechazo">' +
+              'Copiar detalle</button></div>'
+          : '';
+
+        caja.innerHTML = cabecera + rechazo + '<p class="chico mt">Revisando tablas…</p>';
+
+        if ($('#bCopiarRechazo')) $('#bCopiarRechazo').onclick = function () {
+          var txt = JSON.stringify({ yo: yo, rechazadas: rech }, null, 2);
+          if (navigator.clipboard) navigator.clipboard.writeText(txt).then(function () {
+            toast('Detalle copiado');
+          }).catch(function () { prompt('Copiá esto:', txt); });
+          else prompt('Copiá esto:', txt);
+        };
+
+        return C.diagnosticar().then(function (filas) { pintarTablas(caja, filas); });
+      });
+
+      function pintarTablas(caja, filas) {
         var malas = filas.filter(function (f) { return !f.ok; });
-        caja.innerHTML =
+        caja.querySelector('p:last-child').outerHTML =
           (malas.length
             ? '<div class="aviso aviso--error mt"><b>' +
               plural(malas.length, 'tabla con problema', 'tablas con problema') +
               '.</b> Probablemente falte correr alguno de los archivos SQL en Supabase.</div>'
-            : '<div class="aviso aviso--ok mt">Todo responde bien.</div>') +
+            : '<div class="aviso aviso--ok mt">Las tablas responden bien.</div>') +
           '<ul class="lista-simple">' + filas.map(function (f) {
             return '<li><span>' + esc(f.tabla) + '</span><b class="chico" style="color:' +
               (f.ok ? 'var(--lima)' : 'var(--rojo)') + '">' +
               (f.ok ? '✓ ' : '✕ ') + esc(f.motivo) + '</b></li>';
           }).join('') + '</ul>';
-      });
+      }
     };
 
     if ($('#bSync')) $('#bSync').onclick = function () {

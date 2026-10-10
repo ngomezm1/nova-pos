@@ -37,6 +37,7 @@
   var seguidas = 0;         // fallos consecutivos de subida
   var pausado = false;      // deja de reintentar solo tras varios fallos
   var ERR_KEY = 'nova.ultimoError';
+  var rechazadas = [];      // filas que el servidor no acepto, para diagnostico
 
   /* ---------- configuración ---------- */
 
@@ -344,6 +345,7 @@
           if (r.error) throw new Error(r.error.message);
           NOVA.store.limpiarSucios(t, filas.map(function (f) { return f.id; }));
           delete fallasPush[t];
+          rechazadas = rechazadas.filter(function (r) { return r.tabla !== t; });
         })
         .catch(function (e) {
           if (esFalloDeRed(e)) {
@@ -381,6 +383,25 @@
    * cuentan y se nombra el motivo. Sin esto, una sola fila rechazada dejaba
    * todas las ventas del turno en el celular.
    */
+  /* Un resumen corto de la fila, para poder decir CUAL falla sin volcar todo
+   * el registro en pantalla.
+   */
+  function describir(tabla, f) {
+    if (tabla === 'cuentas') {
+      return (f.nombre || '?') + ' · ' + (f.estado || '?') + ' · ' + (f.fecha || 'sin fecha') +
+             (f.sede_id ? '' : ' · SIN SEDE') + (f.deleted ? ' · anulada' : '');
+    }
+    if (tabla === 'items') {
+      return (f.nombre || '?') + ' ×' + f.cantidad + ' · ' + (f.fecha || 'sin fecha') +
+             (f.sede_id ? '' : ' · SIN SEDE');
+    }
+    if (tabla === 'pagos') {
+      return (f.metodo || '?') + ' ' + (f.monto || 0) + ' · ' + (f.fecha || 'sin fecha') +
+             (f.sede_id ? '' : ' · SIN SEDE');
+    }
+    return f.nombre || f.id;
+  }
+
   function subirUnaPorUna(tabla, filas, errorOriginal) {
     var buenas = [], malas = [], motivo = (errorOriginal && errorOriginal.message) || 'error';
 
@@ -398,8 +419,16 @@
 
       if (!malas.length) { delete fallasPush[tabla]; return; }
 
+      // Se guardan para que Ajustes pueda mostrarlas enteras.
+      rechazadas = rechazadas
+        .filter(function (r) { return r.tabla !== tabla; })
+        .concat(malas.map(function (f) {
+          return { tabla: tabla, resumen: describir(tabla, f), fila: limpiarFila(f) };
+        }));
+
       fallasPush[tabla] = {
-        motivo: motivo + ' (' + malas.length + ' de ' + filas.length + ' filas)',
+        motivo: motivo + ' — ' + malas.length + ' de ' + filas.length +
+                ': ' + describir(tabla, malas[0]),
         red: false
       };
     });
@@ -472,6 +501,20 @@
   /* Revisa tabla por tabla y devuelve un diagnostico legible. Sin esto, un
    * "no sincroniza" obliga a adivinar cual de siete tablas es la que falla.
    */
+  /* Le pregunta al servidor quien cree que somos y que nos deja hacer. Sin
+   * esto, un rechazo obliga a entrar a Supabase a hacerse pasar por el
+   * usuario para averiguarlo.
+   */
+  function miEstado() {
+    if (!sb) return Promise.resolve({ error: 'Sin servidor configurado.' });
+    return sb.rpc('mi_estado')
+      .then(function (r) {
+        if (r.error) return { error: r.error.message };
+        return r.data || {};
+      })
+      .catch(function (e) { return { error: (e && e.message) || 'error' }; });
+  }
+
   function diagnosticar() {
     if (!sb) return Promise.resolve([{ tabla: '-', ok: false, motivo: 'Falta conectar el servidor.' }]);
     if (!usuario) return Promise.resolve([{ tabla: '-', ok: false, motivo: 'No hay sesión iniciada.' }]);
@@ -598,6 +641,7 @@
     latir: latir,
     sincronizar: sincronizar, agendarPush: agendarPush, diagnosticar: diagnosticar,
     repararYReintentar: repararYReintentar, contarPendientes: contarPendientes,
+    miEstado: miEstado, rechazadas: function () { return rechazadas; },
     ultimoError: errorGuardado, olvidarUltimoError: olvidarUltimoError,
     pausado: function () { return pausado; },
     estado: function () { return estado; },
