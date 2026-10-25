@@ -1033,6 +1033,39 @@
     return limite ? eventos.slice(0, limite) : eventos;
   }
 
+  /* Un renglón por día, en una sola pasada. Calcular resumen() por cada fecha
+   * recorrería todo el historial una vez por día.
+   */
+  function historial(sedeId) {
+    var dias = {};
+
+    function dia(f) {
+      if (!dias[f]) dias[f] = { fecha: f, vendido: 0, recaudado: 0, clientes: {} };
+      return dias[f];
+    }
+
+    vivos('items').forEach(function (i) {
+      if (!i.fecha || (sedeId && i.sede_id !== sedeId)) return;
+      var d = dia(i.fecha);
+      d.vendido += i.precio * i.cantidad;
+      d.clientes[i.cuenta_id] = true;
+    });
+
+    vivos('pagos').forEach(function (p) {
+      if (!p.fecha || (sedeId && p.sede_id !== sedeId)) return;
+      dia(p.fecha).recaudado += p.monto;
+    });
+
+    return Object.keys(dias).sort().reverse().map(function (f) {
+      var d = dias[f];
+      return {
+        fecha: d.fecha, vendido: d.vendido, recaudado: d.recaudado,
+        clientes: Object.keys(d.clientes).length,
+        porCobrar: d.vendido - d.recaudado
+      };
+    });
+  }
+
   function fechasConMovimiento() {
     var set = {};
     vivos('items').forEach(function (i) { if (i.fecha) set[i.fecha] = true; });
@@ -1298,7 +1331,8 @@
     pagosDe: pagosDe, registrarPago: registrarPago, anularPago: anularPago,
     totalCuenta: totalCuenta, pagadoCuenta: pagadoCuenta, saldoCuenta: saldoCuenta,
 
-    resumen: resumen, actividad: actividad, fechasConMovimiento: fechasConMovimiento,
+    resumen: resumen, actividad: actividad, historial: historial,
+    fechasConMovimiento: fechasConMovimiento,
     exportar: exportar, importar: importar,
     limpiarTodo: limpiarTodo, purgarHistorial: purgarHistorial,
 

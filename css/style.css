@@ -920,6 +920,37 @@ main {
 .stock__cant.ok { color: var(--lima); }
 .stock__nota { font-size: 11px; color: var(--texto-3); }
 
+/* ---------------- historial por días ---------------- */
+
+.dia {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 13px 0;
+  border: 0;
+  border-bottom: 1px solid rgba(160, 120, 255, .12);
+  background: none;
+  color: var(--texto);
+  cursor: pointer;
+}
+
+.dia:last-child { border-bottom: 0; }
+.dia:active { opacity: .6; }
+.dia__cuerpo { flex: 1; min-width: 0; }
+/* En español solo va mayúscula la primera letra: capitalize pondría
+   "Domingo, 25 De Octubre". */
+.dia__cuerpo .item__nombre::first-letter { text-transform: uppercase; }
+
+.dia__monto {
+  flex: none;
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 15px;
+  color: var(--lima);
+}
+
 /* ---------------- usuarios y presencia ---------------- */
 
 .usuario {

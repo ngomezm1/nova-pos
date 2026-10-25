@@ -529,6 +529,18 @@
       .catch(function (e) { return { error: (e && e.message) || 'error' }; });
   }
 
+  /* Vuelve a bajar todo desde el principio. Cada tabla recuerda hasta donde
+   * sincronizo; al olvidar esa marca, la proxima bajada trae el historial
+   * completo. Sirve cuando el celular perdio datos locales.
+   */
+  function traerTodo() {
+    if (!activo()) return Promise.reject(new Error('Primero iniciá sesión.'));
+    TABLAS_TODAS.forEach(function (t) { localStorage.removeItem(SYNC_KEY + t); });
+    return pull().then(function () {
+      return { dias: NOVA.store.historial().length };
+    });
+  }
+
   function diagnosticar() {
     if (!sb) return Promise.resolve([{ tabla: '-', ok: false, motivo: 'Falta conectar el servidor.' }]);
     if (!usuario) return Promise.resolve([{ tabla: '-', ok: false, motivo: 'No hay sesión iniciada.' }]);
@@ -656,6 +668,7 @@
     sincronizar: sincronizar, agendarPush: agendarPush, diagnosticar: diagnosticar,
     repararYReintentar: repararYReintentar, contarPendientes: contarPendientes,
     miEstado: miEstado, rechazadas: function () { return rechazadas; },
+    traerTodo: traerTodo,
     ultimoError: errorGuardado, olvidarUltimoError: olvidarUltimoError,
     pausado: function () { return pausado; },
     estado: function () { return estado; },

@@ -139,6 +139,7 @@ Modificar la app en su teléfono no le sirve de nada: los permisos viven en el s
 | Paga más y hay que dar cambio | Escribí lo que te dio; la app te dice cuánto devolver |
 | Cada uno paga lo suyo | **Dividir** → marcá los vasos de esa persona |
 | Cierre de la noche | **Resumen** → mirá recaudado y quién quedó debiendo |
+| Ver cómo viene el mes | **Resumen** → **Ver historial por días** |
 | Llegaron vasos nuevos | **Inventario** → **Mover** → *Entrada por compra* |
 | Querés contar algo más (pitillos, hielo, limones) | **Inventario** → **+ Agregar insumo** |
 | Es día de dos por uno | **Ajustes** → **Promoción 2x1** → *Encender*. Al terminar, apagalo |

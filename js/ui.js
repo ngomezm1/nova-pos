@@ -4,7 +4,7 @@
 (function (global) {
   'use strict';
 
-  NOVA.VERSION = '1.9';
+  NOVA.VERSION = '2.0';
 
   var S = NOVA.store;
   var C = NOVA.cloud;
@@ -1273,6 +1273,9 @@
             (x === S.diaNegocio() ? 'Hoy · ' : '') + fechaLarga(x) + '</option>';
         }).join('') + '</select></div>';
 
+      html += '<button class="btn btn--fantasma btn--bloque btn--chico" id="bHistorial">' +
+        'Ver historial por días</button>';
+
       if (sedes.length > 1) {
         html += '<div class="pestanas-sede">' +
           '<button data-rsede=""' + (!sedeId ? ' class="on"' : '') + '>Todas</button>' +
@@ -1407,7 +1410,69 @@
     $$('[data-rsede]', m).forEach(function (b) {
       b.onclick = function () { vista.sedeResumen = b.dataset.rsede || null; render(); };
     });
+
+    if ($('#bHistorial')) $('#bHistorial').onclick = function () { hojaHistorial(sedeId); };
     if ($('#bCSV')) $('#bCSV').onclick = function () { descargarCSV(f, sedeId); };
+  }
+
+  /* Todos los días con su resultado, lo más nuevo arriba. Tocar un día salta
+   * al resumen de ese día.
+   */
+  function hojaHistorial(sedeId) {
+    var dias = S.historial(sedeId);
+    var hoy = S.diaNegocio();
+
+    if (!dias.length) {
+      return abrirHoja(
+        '<h2>Historial</h2>' +
+        '<p class="sub">Todavía no hay días con ventas en este celular.</p>' +
+        '<p class="chico">Si antes vendiste y no aparece, usá <b>Ajustes → Descargar ' +
+        'todo el historial</b> para volver a bajarlo del servidor.</p>' +
+        '<button class="btn btn--primario btn--bloque mt" id="hOk">Entendido</button>',
+        function (h) { $('#hOk', h).onclick = cerrarHoja; }
+      );
+    }
+
+    var totalV = dias.reduce(function (t, d) { return t + d.vendido; }, 0);
+    var totalR = dias.reduce(function (t, d) { return t + d.recaudado; }, 0);
+
+    abrirHoja(
+      '<h2>Historial</h2>' +
+      '<p class="sub">' + plural(dias.length, 'día con ventas', 'días con ventas') +
+        (sedeId ? ' · ' + esc(S.nombreSede(sedeId)) : '') + '. Tocá uno para verlo.</p>' +
+
+      '<div class="metricas" style="margin-bottom:16px">' +
+        '<div class="metrica"><div class="rot">Recaudado total</div>' +
+          '<div class="val verde">' + S.money(totalR) + '</div></div>' +
+        '<div class="metrica"><div class="rot">Vendido total</div>' +
+          '<div class="val cyan">' + S.money(totalV) + '</div></div>' +
+      '</div>' +
+
+      '<div class="tarjeta">' + dias.map(function (d) {
+        return '<button class="dia" data-dia="' + d.fecha + '">' +
+          '<span class="dia__cuerpo">' +
+            '<span class="item__nombre">' + esc(fechaLarga(d.fecha)) +
+              (d.fecha === hoy ? ' <span class="etiqueta etiqueta--pagado">hoy</span>' : '') +
+            '</span>' +
+            '<span class="item__meta">' + plural(d.clientes, 'cliente', 'clientes') +
+              (d.porCobrar > 0 ? ' · quedó debiendo ' + S.money(d.porCobrar) : '') +
+            '</span>' +
+          '</span>' +
+          '<span class="dia__monto">' + S.money(d.recaudado) + '</span>' +
+        '</button>';
+      }).join('') + '</div>',
+
+      function (h) {
+        $$('[data-dia]', h).forEach(function (b) {
+          b.onclick = function () {
+            vista.fechaResumen = b.dataset.dia;
+            cerrarHoja();
+            window.scrollTo(0, 0);
+            render();
+          };
+        });
+      }
+    );
   }
 
   function descargarCSV(fecha, sedeId) {
@@ -1563,6 +1628,17 @@
     // unica red de seguridad. Restaurar sigue siendo solo del dueño.
     var pendientes = S.hayPendientesDeSync();
 
+    // Solo el dueño: el ayudante no debe bajarse el historial del negocio.
+    if (dueno) {
+      html += '<div class="titulo-seccion">Historial</div><div class="tarjeta">' +
+        '<p class="chico">Si faltan días viejos en este celular, se vuelven a bajar ' +
+        'del servidor. No borra nada: solo trae lo que falte.</p>' +
+        '<button class="btn btn--chico btn--bloque mt" id="bTraerTodo">' +
+          'Descargar todo el historial</button>' +
+        '<div id="resTraer"></div>' +
+      '</div>';
+    }
+
     html += '<div class="titulo-seccion">Respaldo</div><div class="tarjeta">' +
       (pendientes
         ? '<div class="aviso aviso--error" style="margin-bottom:12px">' +
@@ -1696,6 +1772,20 @@
              : 'Los datos del negocio se borran de este celular y quedan en el servidor.',
         'Cerrar sesión', 'btn--peligro')
         .then(function (ok) { if (ok) C.salir(true).then(function () { location.reload(); }); });
+    };
+
+    if ($('#bTraerTodo')) $('#bTraerTodo').onclick = function () {
+      var caja = $('#resTraer');
+      caja.innerHTML = '<p class="chico mt">Bajando…</p>';
+      C.traerTodo()
+        .then(function (r) {
+          caja.innerHTML = '<div class="aviso aviso--ok mt">Listo: ' +
+            esc(plural(r.dias, 'día con ventas', 'días con ventas')) +
+            ' en este celular.</div>';
+        })
+        .catch(function (e) {
+          caja.innerHTML = '<div class="aviso aviso--error mt">' + esc(e.message) + '</div>';
+        });
     };
 
     if ($('#bExport')) $('#bExport').onclick = function () {
