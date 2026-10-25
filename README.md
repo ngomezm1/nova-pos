@@ -12,6 +12,7 @@ Funciona como app en el celular, sin costo de licencia y sin servidor propio.
 - **Varias sedes.** Al abrir la app se elige dónde se está registrando. Cada sede lleva sus cuentas y su propio inventario, y se pueden comparar en el resumen.
 - **Inventario de vasos, por sede.** Icopor en 8, 12, 16 y 24 oz, y el vaso plástico de las micheladas, que es uno solo y no lleva tamaño. Cada venta descuenta el vaso de su sede, con alerta cuando se está acabando. Se pueden trasladar vasos de una sede a otra.
 - **Resumen diario.** Recaudado, por cobrar, ticket promedio, cómo pagaron, qué se vendió, cuántos vasos salieron y quién debe. Se descarga en Excel.
+- **Venta promedio por día**, comparando los últimos días contra los anteriores, para ver si el negocio sube o baja.
 - **Dos celulares en vivo.** El tuyo y el del ayudante ven las mismas cuentas al instante.
 - **Roles.** El ayudante solo vende. No ve inventario ni los totales del negocio, y no puede cambiar precios.
 - **Sin señal igual funciona.** Si se cae internet, sigue vendiendo en el celular y sincroniza cuando vuelve.

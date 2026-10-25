@@ -1066,6 +1066,42 @@
     });
   }
 
+  /* Venta promedio por día y hacia dónde va.
+   *
+   * Solo cuenta días con ventas: dividir por días del calendario castigaría
+   * los días que el negocio no abre. Y deja fuera el día en curso, que
+   * siempre está a medias y arrastraría el promedio para abajo.
+   *
+   * La comparación es entre bloques del MISMO tamaño: los últimos N días
+   * contra los N anteriores. Comparar contra el promedio de todo el historial
+   * daría un número que casi no se mueve y no avisaría nada.
+   */
+  function tendencia(sedeId) {
+    var dias = historial(sedeId).filter(function (d) {
+      return d.fecha !== diaNegocio();
+    });
+
+    if (!dias.length) return null;
+
+    var suma = function (lista) {
+      return lista.reduce(function (t, d) { return t + d.vendido; }, 0);
+    };
+
+    var promedio = Math.round(suma(dias) / dias.length);
+
+    // Con menos de 2 días cerrados no hay dos bloques que comparar.
+    var n = Math.min(7, Math.floor(dias.length / 2));
+    var cambio = null;
+
+    if (n >= 1) {
+      var recientes = suma(dias.slice(0, n)) / n;
+      var previos   = suma(dias.slice(n, n * 2)) / n;
+      if (previos > 0) cambio = Math.round((recientes - previos) / previos * 100);
+    }
+
+    return { promedio: promedio, dias: dias.length, cambio: cambio, bloque: n };
+  }
+
   function fechasConMovimiento() {
     var set = {};
     vivos('items').forEach(function (i) { if (i.fecha) set[i.fecha] = true; });
@@ -1331,7 +1367,7 @@
     pagosDe: pagosDe, registrarPago: registrarPago, anularPago: anularPago,
     totalCuenta: totalCuenta, pagadoCuenta: pagadoCuenta, saldoCuenta: saldoCuenta,
 
-    resumen: resumen, actividad: actividad, historial: historial,
+    resumen: resumen, actividad: actividad, historial: historial, tendencia: tendencia,
     fechasConMovimiento: fechasConMovimiento,
     exportar: exportar, importar: importar,
     limpiarTodo: limpiarTodo, purgarHistorial: purgarHistorial,

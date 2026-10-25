@@ -4,7 +4,7 @@
 (function (global) {
   'use strict';
 
-  NOVA.VERSION = '2.1';
+  NOVA.VERSION = '2.2';
 
   var S = NOVA.store;
   var C = NOVA.cloud;
@@ -1305,6 +1305,32 @@
         '<div class="metrica"><div class="rot">Ticket promedio</div>' +
           '<div class="val">' + S.money(r.ticketPromedio) + '</div>' +
           '<div class="nota">por cliente</div></div>';
+
+      var t = S.tendencia(sedeId);
+      if (t) {
+        var flecha = '', clase = '', nota;
+
+        // Con un bloque de un solo día, "vs los 1 anteriores" no se entiende.
+        var contra = t.bloque === 1 ? 'el día anterior' : 'los ' + t.bloque + ' anteriores';
+
+        if (t.cambio === null) {
+          nota = 'sobre ' + plural(t.dias, 'día abierto', 'días abiertos');
+        } else if (t.cambio > 0) {
+          flecha = '▲ '; clase = ' verde';
+          nota = '+' + t.cambio + '% vs ' + contra;
+        } else if (t.cambio < 0) {
+          flecha = '▼ '; clase = ' rojo';
+          nota = t.cambio + '% vs ' + contra;
+        } else {
+          nota = 'igual que ' + contra;
+        }
+
+        html += '<div class="metrica" style="grid-column:1/-1">' +
+          '<div class="rot">Venta promedio por día</div>' +
+          '<div class="val">' + S.money(t.promedio) +
+            '<span class="tendencia' + clase + '">' + flecha + '</span></div>' +
+          '<div class="nota">' + esc(nota) + '</div></div>';
+      }
     }
     html += '</div>';
 
