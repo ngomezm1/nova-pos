@@ -4,7 +4,7 @@
 (function (global) {
   'use strict';
 
-  NOVA.VERSION = '2.4';
+  NOVA.VERSION = '2.5';
 
   var S = NOVA.store;
   var C = NOVA.cloud;
@@ -1509,6 +1509,15 @@
    * La columna Fecha va siempre: un archivo de varios días sin ella no se
    * puede ordenar ni filtrar en Excel.
    */
+  function aCSV(filas) {
+    return filas.map(function (f) {
+      return f.map(function (v) {
+        v = String(v === undefined || v === null ? '' : v);
+        return /[",;\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+      }).join(';');
+    }).join('\r\n');
+  }
+
   function descargarCSV(fecha, sedeId) {
     var delTurno = function (r) {
       return (!fecha || r.fecha === fecha) && (!sedeId || r.sede_id === sedeId);
@@ -1554,6 +1563,105 @@
     var cuando = fecha || 'historial-completo-' + S.diaNegocio();
     descargar('nova-ventas-' + cuando + sufijo + '.csv', '﻿' + csv, 'text/csv;charset=utf-8');
     toast(fecha ? 'Descargado' : 'Historial completo descargado');
+  }
+
+  /* Todo el negocio en un archivo: cada tabla en su bloque, separadas por una
+   * linea en blanco. Excel abre eso sin problema y queda legible.
+   */
+  function filasDeTodo() {
+    var f = [];
+    var sede = function (id) { return S.nombreSede(id); };
+    var cliente = function (id) {
+      var c = S.buscar('cuentas', id);
+      return c ? c.nombre : '';
+    };
+
+    f.push(['NOVA POS · historial completo']);
+    f.push(['Generado', new Date().toLocaleString('es-CO')]);
+    f.push([]);
+
+    f.push(['RESUMEN POR DÍA']);
+    f.push(['Fecha', 'Clientes', 'Vendido', 'Recaudado', 'Quedó debiendo']);
+    S.historial().slice().reverse().forEach(function (d) {
+      f.push([d.fecha, d.clientes, d.vendido, d.recaudado, d.porCobrar]);
+    });
+
+    f.push([]);
+    f.push(['CUENTAS']);
+    f.push(['Fecha', 'Sede', 'Cliente', 'Estado', 'Abrió', 'Cerró',
+            'Consumo', 'Pagado', 'Debe', 'Nota', 'Atendió']);
+    S.cuentas().slice()
+      .sort(function (a, b) { return (a.fecha || '').localeCompare(b.fecha || ''); })
+      .forEach(function (c) {
+        f.push([c.fecha, sede(c.sede_id), c.nombre, c.estado,
+                hora(c.created_at), c.closed_at ? hora(c.closed_at) : '',
+                S.totalCuenta(c.id), S.pagadoCuenta(c.id), S.saldoCuenta(c.id),
+                c.nota || '', c.creada_por || '']);
+      });
+
+    f.push([]);
+    f.push(['VENTAS']);
+    f.push(['Fecha', 'Hora', 'Sede', 'Cliente', 'Producto', 'Cantidad',
+            'Precio unitario', 'Total', 'Descuenta', 'Unidades', 'Vendió']);
+    S.vivos('items').slice()
+      .sort(function (a, b) { return (a.fecha || '').localeCompare(b.fecha || ''); })
+      .forEach(function (i) {
+        var k = S.claveConsumo(i);
+        var inv = k ? S.inventario().filter(function (x) { return S.claveDe(x) === k; })[0] : null;
+        f.push([i.fecha, hora(i.created_at), sede(i.sede_id), cliente(i.cuenta_id),
+                i.nombre, i.cantidad, i.precio, i.precio * i.cantidad,
+                inv ? S.etiquetaDe(inv) : '', S.cantConsumo(i) * i.cantidad,
+                i.vendido_por || '']);
+      });
+
+    f.push([]);
+    f.push(['COBROS']);
+    f.push(['Fecha', 'Hora', 'Sede', 'Cliente', 'Monto', 'Método',
+            'Quién pagó', 'Cobró', 'Nota']);
+    S.vivos('pagos').slice()
+      .sort(function (a, b) { return (a.fecha || '').localeCompare(b.fecha || ''); })
+      .forEach(function (p) {
+        f.push([p.fecha, hora(p.created_at), sede(p.sede_id), cliente(p.cuenta_id),
+                p.monto, p.metodo, p.quien || '', p.cobrado_por || '', p.nota || '']);
+      });
+
+    f.push([]);
+    f.push(['INVENTARIO HOY']);
+    f.push(['Sede', 'Artículo', 'Tipo', 'En stock', 'Avisar bajo', 'Unidad']);
+    S.inventario().forEach(function (i) {
+      f.push([sede(i.sede_id), S.etiquetaDe(i),
+              i.tipo === 'insumo' ? 'insumo' : 'vaso',
+              i.stock || 0, i.minimo || 0, i.unidad || '']);
+    });
+
+    f.push([]);
+    f.push(['MOVIMIENTOS DE INVENTARIO']);
+    f.push(['Fecha', 'Hora', 'Sede', 'Artículo', 'Motivo', 'Cantidad', 'Nota']);
+    S.movimientosDe().slice().reverse().forEach(function (m) {
+      f.push([m.fecha, hora(m.created_at), sede(m.sede_id),
+              m.nombre || S.etiquetaVaso(m.tipo_vaso, m.oz),
+              m.motivo, m.delta, m.nota || '']);
+    });
+
+    f.push([]);
+    f.push(['PRODUCTOS Y PRECIOS']);
+    f.push(['Producto', 'Categoría', 'Precio', 'Descuenta', 'Unidades', 'En venta']);
+    S.productos().forEach(function (p) {
+      var k = S.claveConsumo(p);
+      var inv = k ? S.inventario().filter(function (x) { return S.claveDe(x) === k; })[0] : null;
+      f.push([p.nombre, p.categoria || '', p.precio,
+              inv ? S.etiquetaDe(inv) : 'nada', S.cantConsumo(p),
+              p.activo === false ? 'no' : 'sí']);
+    });
+
+    f.push([]);
+    f.push(['SEDES']);
+    f.push(['Sede', 'Estado']);
+    S.sedes().forEach(function (sd) {
+      f.push([sd.nombre, sd.activa === false ? 'cerrada' : 'abierta']);
+    });
+
+    return f;
   }
 
   function descargar(nombre, contenido, tipo) {
@@ -1686,8 +1794,12 @@
         '<button class="btn btn--chico btn--bloque mt" id="bTraerTodo">' +
           'Traer todo del servidor</button>' +
         '<div id="resTraer"></div>' +
-        '<p class="chico mt">Para bajar el historial en Excel: ' +
-        '<b>Resumen → Ver historial</b>.</p>' +
+        '<button class="btn btn--exito btn--bloque mt" id="bTodoExcel">' +
+          'Descargar TODO en Excel</button>' +
+        '<div class="ayuda" style="margin-top:6px">Cuentas, ventas, cobros, ' +
+        'inventario, movimientos, productos y sedes. Trae lo último del ' +
+        'servidor antes de generar el archivo.</div>' +
+        '<div id="resTodoExcel"></div>' +
       '</div>';
     }
 
@@ -1824,6 +1936,29 @@
              : 'Los datos del negocio se borran de este celular y quedan en el servidor.',
         'Cerrar sesión', 'btn--peligro')
         .then(function (ok) { if (ok) C.salir(true).then(function () { location.reload(); }); });
+    };
+
+    if ($('#bTodoExcel')) $('#bTodoExcel').onclick = function () {
+      var b = $('#bTodoExcel'), caja = $('#resTodoExcel');
+      b.disabled = true;
+      b.textContent = 'Preparando…';
+
+      // Traer primero: exportar solo lo que el celular tenia cargado seria
+      // una copia incompleta sin que se note.
+      var traer = C.activo() ? C.traerTodo() : Promise.resolve(null);
+
+      traer.catch(function () { return null; }).then(function () {
+        var filas = filasDeTodo();
+        descargar('nova-TODO-' + S.diaNegocio() + '.csv',
+                  '\ufeff' + aCSV(filas), 'text/csv;charset=utf-8');
+
+        b.disabled = false;
+        b.textContent = 'Descargar TODO en Excel';
+        caja.innerHTML = '<div class="aviso aviso--ok mt">Listo. ' +
+          esc(plural(S.historial().length, 'día de historial', 'días de historial')) +
+          ', ' + esc(plural(S.cuentas().length, 'cuenta', 'cuentas')) + '. ' +
+          'Guardalo fuera del celular: WhatsApp, Drive o correo.</div>';
+      });
     };
 
     if ($('#bTraerTodo')) $('#bTraerTodo').onclick = function () {

@@ -161,7 +161,9 @@ Una cuenta se queda en la sede donde se abrió. Si cambiás el celular de sede, 
 no se borra sola —la app no tiene permiso de borrar nada— pero si algo saliera mal no hay punto
 de restauración. Sacá una copia cada tanto:
 
-- **Resumen → Ver historial → Bajar todo en Excel**: ventas, cobros y un resumen por día.
+- **Ajustes → Historial → Descargar TODO en Excel**: cuentas, ventas, cobros, inventario,
+  movimientos, productos y sedes. Trae lo último del servidor antes de generar el archivo.
+- **Resumen → Ver historial → Bajar todo en Excel**: solo ventas y cobros, con resumen por día.
 - **Ajustes → Respaldo → Guardar copia**: el archivo completo para restaurar en la app.
 
 Antes de exportar, tocá **Traer todo del servidor**: la sincronización normal solo baja lo que
