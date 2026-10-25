@@ -275,7 +275,7 @@ main {
 
 .pestanas-sede {
   display: flex;
-  gap: 7px;
+  gap: 10px;
   margin-bottom: 14px;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -1107,6 +1107,7 @@ main {
 .mt { margin-top: 14px; }
 .mt-lg { margin-top: 24px; }
 .mb0 { margin-bottom: 0; }
+.mb { margin-bottom: 14px; }
 .chico { font-size: 12px; color: var(--texto-3); }
 
 .toast {

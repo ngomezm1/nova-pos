@@ -4,7 +4,7 @@
 (function (global) {
   'use strict';
 
-  NOVA.VERSION = '2.3';
+  NOVA.VERSION = '2.4';
 
   var S = NOVA.store;
   var C = NOVA.cloud;
@@ -1273,7 +1273,7 @@
             (x === S.diaNegocio() ? 'Hoy · ' : '') + fechaLarga(x) + '</option>';
         }).join('') + '</select></div>';
 
-      html += '<div class="fila-btn">' +
+      html += '<div class="fila-btn mb">' +
           '<button class="btn btn--chico" id="bHistorial">Ver historial</button>' +
           '<button class="btn btn--chico" id="bCSV">Bajar este día</button>' +
         '</div>';
