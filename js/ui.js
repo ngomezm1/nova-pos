@@ -4,7 +4,7 @@
 (function (global) {
   'use strict';
 
-  NOVA.VERSION = '2.0';
+  NOVA.VERSION = '2.1';
 
   var S = NOVA.store;
   var C = NOVA.cloud;
@@ -1475,24 +1475,43 @@
     );
   }
 
+  /* Sin fecha exporta el historial completo. Con fecha, solo ese día.
+   * La columna Fecha va siempre: un archivo de varios días sin ella no se
+   * puede ordenar ni filtrar en Excel.
+   */
   function descargarCSV(fecha, sedeId) {
     var delTurno = function (r) {
-      return r.fecha === fecha && (!sedeId || r.sede_id === sedeId);
+      return (!fecha || r.fecha === fecha) && (!sedeId || r.sede_id === sedeId);
     };
 
-    var filas = [['Hora', 'Sede', 'Cliente', 'Producto', 'Cantidad', 'Precio unitario', 'Total', 'Vendió']];
-    S.vivos('items').filter(delTurno).forEach(function (i) {
+    var porFecha = function (a, b) { return (a.fecha || '').localeCompare(b.fecha || ''); };
+
+    var filas = [['VENTAS'], ['Fecha', 'Hora', 'Sede', 'Cliente', 'Producto',
+                  'Cantidad', 'Precio unitario', 'Total', 'Vendió']];
+    S.vivos('items').filter(delTurno).sort(porFecha).forEach(function (i) {
       var c = S.buscar('cuentas', i.cuenta_id);
-      filas.push([hora(i.created_at), S.nombreSede(i.sede_id), c ? c.nombre : '', i.nombre,
-                  i.cantidad, i.precio, i.precio * i.cantidad, i.vendido_por || '']);
+      filas.push([i.fecha, hora(i.created_at), S.nombreSede(i.sede_id), c ? c.nombre : '',
+                  i.nombre, i.cantidad, i.precio, i.precio * i.cantidad, i.vendido_por || '']);
     });
+
     filas.push([]);
-    filas.push(['Hora', 'Sede', 'Cliente', 'Pago', 'Método', 'Quién pagó', 'Cobró']);
-    S.vivos('pagos').filter(delTurno).forEach(function (p) {
+    filas.push(['COBROS']);
+    filas.push(['Fecha', 'Hora', 'Sede', 'Cliente', 'Pago', 'Método', 'Quién pagó', 'Cobró']);
+    S.vivos('pagos').filter(delTurno).sort(porFecha).forEach(function (p) {
       var c = S.buscar('cuentas', p.cuenta_id);
-      filas.push([hora(p.created_at), S.nombreSede(p.sede_id), c ? c.nombre : '',
+      filas.push([p.fecha, hora(p.created_at), S.nombreSede(p.sede_id), c ? c.nombre : '',
                   p.monto, p.metodo, p.quien || '', p.cobrado_por || '']);
     });
+
+    // Un resumen por día al final: es lo primero que se mira al abrirlo.
+    if (!fecha) {
+      filas.push([]);
+      filas.push(['RESUMEN POR DÍA']);
+      filas.push(['Fecha', 'Clientes', 'Vendido', 'Recaudado', 'Quedó debiendo']);
+      S.historial(sedeId).slice().reverse().forEach(function (d) {
+        filas.push([d.fecha, d.clientes, d.vendido, d.recaudado, d.porCobrar]);
+      });
+    }
 
     var csv = filas.map(function (f) {
       return f.map(function (v) {
@@ -1502,8 +1521,9 @@
     }).join('\r\n');
 
     var sufijo = sedeId ? '-' + S.nombreSede(sedeId).toLowerCase().replace(/\s+/g, '-') : '';
-    descargar('nova-ventas-' + fecha + sufijo + '.csv', '﻿' + csv, 'text/csv;charset=utf-8');
-    toast('Descargado');
+    var cuando = fecha || 'historial-completo-' + S.diaNegocio();
+    descargar('nova-ventas-' + cuando + sufijo + '.csv', '﻿' + csv, 'text/csv;charset=utf-8');
+    toast(fecha ? 'Descargado' : 'Historial completo descargado');
   }
 
   function descargar(nombre, contenido, tipo) {
@@ -1634,8 +1654,13 @@
         '<p class="chico">Si faltan días viejos en este celular, se vuelven a bajar ' +
         'del servidor. No borra nada: solo trae lo que falte.</p>' +
         '<button class="btn btn--chico btn--bloque mt" id="bTraerTodo">' +
-          'Descargar todo el historial</button>' +
+          'Traer todo del servidor</button>' +
         '<div id="resTraer"></div>' +
+        '<p class="chico mt">El plan gratis de Supabase no hace respaldos ' +
+        'automáticos. Guardá una copia cada tanto y mandátela por WhatsApp ' +
+        'o subila a Drive.</p>' +
+        '<button class="btn btn--exito btn--bloque mt" id="bExportTodo">' +
+          'Descargar TODO en Excel</button>' +
       '</div>';
     }
 
@@ -1772,6 +1797,11 @@
              : 'Los datos del negocio se borran de este celular y quedan en el servidor.',
         'Cerrar sesión', 'btn--peligro')
         .then(function (ok) { if (ok) C.salir(true).then(function () { location.reload(); }); });
+    };
+
+    if ($('#bExportTodo')) $('#bExportTodo').onclick = function () {
+      if (!S.historial().length) return toast('Todavía no hay ventas');
+      descargarCSV(null, null);
     };
 
     if ($('#bTraerTodo')) $('#bTraerTodo').onclick = function () {

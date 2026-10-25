@@ -156,7 +156,15 @@ Una cuenta se queda en la sede donde se abrió. Si cambiás el celular de sede, 
 
 ## Respaldo
 
-**Ajustes → Descargar respaldo** guarda un archivo con todo. Con Supabase conectado los datos ya están en el servidor, pero el respaldo sirve si querés una copia propia.
+**El plan gratis de Supabase no hace respaldos automáticos.** Una venta que llegó al servidor
+no se borra sola —la app no tiene permiso de borrar nada— pero si algo saliera mal no hay punto
+de restauración. Sacá una copia cada tanto:
+
+- **Ajustes → Historial → Descargar TODO en Excel**: ventas, cobros y un resumen por día.
+- **Ajustes → Respaldo → Guardar copia**: el archivo completo para restaurar en la app.
+
+Antes de exportar, tocá **Traer todo del servidor**: la sincronización normal solo baja lo que
+cambió desde la última vez, así que un celular reinstalado puede no tener los días viejos.
 
 ## Cuánto cuesta
 
