@@ -4,7 +4,7 @@
 (function (global) {
   'use strict';
 
-  NOVA.VERSION = '2.2';
+  NOVA.VERSION = '2.3';
 
   var S = NOVA.store;
   var C = NOVA.cloud;
@@ -1273,8 +1273,10 @@
             (x === S.diaNegocio() ? 'Hoy · ' : '') + fechaLarga(x) + '</option>';
         }).join('') + '</select></div>';
 
-      html += '<button class="btn btn--fantasma btn--bloque btn--chico" id="bHistorial">' +
-        'Ver historial por días</button>';
+      html += '<div class="fila-btn">' +
+          '<button class="btn btn--chico" id="bHistorial">Ver historial</button>' +
+          '<button class="btn btn--chico" id="bCSV">Bajar este día</button>' +
+        '</div>';
 
       if (sedes.length > 1) {
         html += '<div class="pestanas-sede">' +
@@ -1417,11 +1419,6 @@
         }).join('') + '</ul></div>';
     }
 
-    if (dueno) {
-      html += '<button class="btn btn--fantasma btn--bloque mt" id="bCSV">' +
-        'Descargar en Excel · ' + esc(rotuloSede) + '</button>';
-    }
-
     if (r.recaudado === 0 && r.vendido === 0) {
       html = html.split('<div class="titulo-seccion">Cómo pagaron')[0] +
         '<div class="vacio"><span class="emoji">🌙</span><strong>Sin ventas todavía</strong>' +
@@ -1474,6 +1471,8 @@
           '<div class="val cyan">' + S.money(totalV) + '</div></div>' +
       '</div>' +
 
+      '<button class="btn btn--exito btn--bloque" id="hExcel" style="margin-bottom:14px">' +
+        'Bajar todo en Excel</button>' +
       '<div class="tarjeta">' + dias.map(function (d) {
         return '<button class="dia" data-dia="' + d.fecha + '">' +
           '<span class="dia__cuerpo">' +
@@ -1497,6 +1496,11 @@
             render();
           };
         });
+
+        $('#hExcel', h).onclick = function () {
+          descargarCSV(null, sedeId);
+          cerrarHoja();
+        };
       }
     );
   }
@@ -1682,11 +1686,8 @@
         '<button class="btn btn--chico btn--bloque mt" id="bTraerTodo">' +
           'Traer todo del servidor</button>' +
         '<div id="resTraer"></div>' +
-        '<p class="chico mt">El plan gratis de Supabase no hace respaldos ' +
-        'automáticos. Guardá una copia cada tanto y mandátela por WhatsApp ' +
-        'o subila a Drive.</p>' +
-        '<button class="btn btn--exito btn--bloque mt" id="bExportTodo">' +
-          'Descargar TODO en Excel</button>' +
+        '<p class="chico mt">Para bajar el historial en Excel: ' +
+        '<b>Resumen → Ver historial</b>.</p>' +
       '</div>';
     }
 
@@ -1823,11 +1824,6 @@
              : 'Los datos del negocio se borran de este celular y quedan en el servidor.',
         'Cerrar sesión', 'btn--peligro')
         .then(function (ok) { if (ok) C.salir(true).then(function () { location.reload(); }); });
-    };
-
-    if ($('#bExportTodo')) $('#bExportTodo').onclick = function () {
-      if (!S.historial().length) return toast('Todavía no hay ventas');
-      descargarCSV(null, null);
     };
 
     if ($('#bTraerTodo')) $('#bTraerTodo').onclick = function () {
