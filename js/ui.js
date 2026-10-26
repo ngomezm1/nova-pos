@@ -4,7 +4,7 @@
 (function (global) {
   'use strict';
 
-  NOVA.VERSION = '2.5';
+  NOVA.VERSION = '2.6';
 
   var S = NOVA.store;
   var C = NOVA.cloud;
@@ -670,7 +670,11 @@
     html += '<div class="titulo-seccion">Opciones</div>' +
       '<button class="btn btn--fantasma btn--bloque btn--chico" id="bRenombrar">Cambiar nombre o nota</button>' +
       (pagos.length === 0
-        ? '<button class="btn btn--fantasma btn--peligro btn--bloque btn--chico mt">Anular cuenta completa</button>'.replace('<button', '<button id="bAnularCuenta"')
+        ? (NOVA.sesion.esDueno()
+            ? '<button class="btn btn--fantasma btn--peligro btn--bloque btn--chico mt" ' +
+              'id="bAnularCuenta">Anular cuenta completa</button>'
+            : '<p class="chico mt">¿La abriste por error? Pedile al dueño que la ' +
+              'anule. Mientras tanto, podés quitarle los vasos con el <b>−</b>.</p>')
         : '');
 
     m.innerHTML = html;

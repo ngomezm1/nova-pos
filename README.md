@@ -46,6 +46,7 @@ Son tres partes. Calculá una hora la primera vez.
    8. [`08-permiso-escritura.sql`](supabase/08-permiso-escritura.sql) — que el ayudante pueda registrar el cobro de una cuenta vieja
    9. [`09-diagnostico.sql`](supabase/09-diagnostico.sql) — que la app pueda preguntar al servidor cómo la ve
   10. [`10-guardar-sin-leer.sql`](supabase/10-guardar-sin-leer.sql) — que el ayudante pueda guardar sobre el historial sin poder leerlo
+  11. [`11-anular-solo-dueno.sql`](supabase/11-anular-solo-dueno.sql) — que solo el dueño pueda anular cuentas
 6. Andá a **Authentication** → **Providers** → **Email** y **desactivá** *Confirm email*. Así los usuarios entran sin tener que confirmar el correo.
 7. Andá a **Authentication** → **Users** → **Add user** → *Create new user*.
    - Correo y contraseña **tuyos**. Este primer usuario queda como **dueño** automáticamente.
@@ -117,7 +118,10 @@ No es una pantalla escondida: es el servidor el que decide.
 - **El historial es solo tuyo.** Él ve lo de hoy y las cuentas que sigan abiertas de otros días
   (para poder cobrarlas). Lo de días anteriores ya cerrado no le llega, y lo que bajó cuando
   era "hoy" se borra de su celular al día siguiente.
-- Nadie puede borrar cuentas, ítems ni pagos: se marcan como anulados y queda el rastro.
+- **Anular una cuenta es solo del dueño.** Se lleva las ventas y devuelve los vasos, así que
+  el ayudante que abre una cuenta por error le avisa. Sí puede corregir el pedido quitando
+  vasos con el botón −.
+- Nadie borra físicamente cuentas, ítems ni pagos: se marcan como anulados y queda el rastro.
 - Cuando cierra sesión, los datos del negocio se borran de ese celular.
 - **El dueño puede quitarle el acceso a cualquiera** desde Ajustes → Quién tiene acceso.
   La sesión se cierra en todos sus aparatos y el celular se limpia, sin importar que

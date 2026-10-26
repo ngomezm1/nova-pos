@@ -733,8 +733,12 @@
     commit(['cuentas']);
   }
 
-  // Cancelar devuelve los vasos al inventario. Solo si no tiene pagos.
+  /* Anular devuelve los vasos al inventario y se lleva las ventas de la
+   * cuenta. Solo el dueño: es la única acción del día a día que borra plata
+   * ya registrada sin dejar nada visible.
+   */
   function cancelarCuenta(id) {
+    if (!esDueno()) return false;
     if (pagosDe(id).length > 0) return false;
     itemsDe(id).forEach(function (it) {
       var cIt = claveConsumo(it);
