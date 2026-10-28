@@ -4,7 +4,7 @@
 (function (global) {
   'use strict';
 
-  NOVA.VERSION = '2.6';
+  NOVA.VERSION = '2.7';
 
   var S = NOVA.store;
   var C = NOVA.cloud;
@@ -1440,78 +1440,189 @@
 
     if ($('#bHistorial')) $('#bHistorial').onclick = function () { hojaHistorial(sedeId); };
     if ($('#bCSV')) $('#bCSV').onclick = function () { descargarCSV(f, sedeId); };
+
   }
 
   /* Todos los días con su resultado, lo más nuevo arriba. Tocar un día salta
    * al resumen de ese día.
    */
-  function hojaHistorial(sedeId) {
-    var dias = S.historial(sedeId);
-    var hoy = S.diaNegocio();
+  /* ---------- historial con filtro de fechas ---------- */
 
-    if (!dias.length) {
+  /* Atajos de período. Se calculan sobre el día de negocio, no sobre el
+   * calendario: "hoy" a la 1 am sigue siendo la noche anterior.
+   */
+  function rangosRapidos() {
+    var hoy = S.diaNegocio();
+    var mover = function (dias) {
+      var p = hoy.split('-');
+      var d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]) + dias);
+      return d.getFullYear() + '-' +
+             ('0' + (d.getMonth() + 1)).slice(-2) + '-' +
+             ('0' + d.getDate()).slice(-2);
+    };
+    var primeroDe = function (mesAtras) {
+      var p = hoy.split('-');
+      var d = new Date(Number(p[0]), Number(p[1]) - 1 - mesAtras, 1);
+      return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-01';
+    };
+    var ultimoDe = function (mesAtras) {
+      var p = hoy.split('-');
+      var d = new Date(Number(p[0]), Number(p[1]) - mesAtras, 0);
+      return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' +
+             ('0' + d.getDate()).slice(-2);
+    };
+
+    return [
+      { id: 'hoy',     txt: 'Hoy',         desde: hoy,          hasta: hoy },
+      { id: 'ayer',    txt: 'Ayer',        desde: mover(-1),    hasta: mover(-1) },
+      { id: '7',       txt: '7 días',      desde: mover(-6),    hasta: hoy },
+      { id: '30',      txt: '30 días',     desde: mover(-29),   hasta: hoy },
+      { id: 'mes',     txt: 'Este mes',    desde: primeroDe(0), hasta: hoy },
+      { id: 'mespas',  txt: 'Mes pasado',  desde: primeroDe(1), hasta: ultimoDe(1) },
+      { id: 'todo',    txt: 'Todo',        desde: null,         hasta: null }
+    ];
+  }
+
+  function enRango(fecha, r) {
+    if (!r) return true;
+    if (r.desde && fecha < r.desde) return false;
+    if (r.hasta && fecha > r.hasta) return false;
+    return true;
+  }
+
+  function etiquetaRango(r) {
+    if (!r || (!r.desde && !r.hasta)) return 'todo el historial';
+    if (r.txt) return r.txt.toLowerCase();
+    if (r.desde === r.hasta) return fechaLarga(r.desde);
+    return 'del ' + fechaCorta(r.desde) + ' al ' + fechaCorta(r.hasta);
+  }
+
+  function fechaCorta(f) {
+    var p = f.split('-');
+    var d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+    return d.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' });
+  }
+
+  function hojaHistorial(sedeId) {
+    var todos = S.historial(sedeId);
+
+    if (!todos.length) {
       return abrirHoja(
         '<h2>Historial</h2>' +
         '<p class="sub">Todavía no hay días con ventas en este celular.</p>' +
-        '<p class="chico">Si antes vendiste y no aparece, usá <b>Ajustes → Descargar ' +
-        'todo el historial</b> para volver a bajarlo del servidor.</p>' +
+        '<p class="chico">Si antes vendiste y no aparece, usá <b>Ajustes → Historial → ' +
+        'Traer todo del servidor</b>.</p>' +
         '<button class="btn btn--primario btn--bloque mt" id="hOk">Entendido</button>',
         function (h) { $('#hOk', h).onclick = cerrarHoja; }
       );
     }
 
-    var totalV = dias.reduce(function (t, d) { return t + d.vendido; }, 0);
-    var totalR = dias.reduce(function (t, d) { return t + d.recaudado; }, 0);
+    var hoy = S.diaNegocio();
+    var limites = { min: todos[todos.length - 1].fecha, max: todos[0].fecha };
+    var rango = vista.rangoHistorial || null;
+
+    function pintar() {
+      var dias = todos.filter(function (d) { return enRango(d.fecha, rango); });
+      var totalV = dias.reduce(function (t, d) { return t + d.vendido; }, 0);
+      var totalR = dias.reduce(function (t, d) { return t + d.recaudado; }, 0);
+      var activo = rango ? rango.id : 'todo';
+
+      var cuerpo =
+        '<div class="rangos">' + rangosRapidos().map(function (r) {
+          return '<button data-rango="' + r.id + '"' +
+            (activo === r.id ? ' class="on"' : '') + '>' + r.txt + '</button>';
+        }).join('') + '</div>' +
+
+        '<div class="fila-btn mb">' +
+          '<label class="campo-fecha">Desde' +
+            '<input type="date" id="hDesde" min="' + limites.min + '" max="' + limites.max +
+            '" value="' + (rango && rango.desde ? rango.desde : '') + '"></label>' +
+          '<label class="campo-fecha">Hasta' +
+            '<input type="date" id="hHasta" min="' + limites.min + '" max="' + limites.max +
+            '" value="' + (rango && rango.hasta ? rango.hasta : '') + '"></label>' +
+        '</div>' +
+
+        '<div class="metricas" style="margin-bottom:14px">' +
+          '<div class="metrica"><div class="rot">Recaudado</div>' +
+            '<div class="val verde">' + S.money(totalR) + '</div>' +
+            '<div class="nota">' + esc(etiquetaRango(rango)) + '</div></div>' +
+          '<div class="metrica"><div class="rot">Vendido</div>' +
+            '<div class="val cyan">' + S.money(totalV) + '</div>' +
+            '<div class="nota">' + plural(dias.length, 'día', 'días') + '</div></div>' +
+        '</div>' +
+
+        '<button class="btn btn--exito btn--bloque" id="hExcel" style="margin-bottom:14px"' +
+          (dias.length ? '' : ' disabled') + '>Bajar en Excel</button>' +
+
+        (dias.length
+          ? '<div class="tarjeta">' + dias.map(function (d) {
+              return '<button class="dia" data-dia="' + d.fecha + '">' +
+                '<span class="dia__cuerpo">' +
+                  '<span class="item__nombre">' + esc(fechaLarga(d.fecha)) +
+                    (d.fecha === hoy ? ' <span class="etiqueta etiqueta--pagado">hoy</span>' : '') +
+                  '</span>' +
+                  '<span class="item__meta">' + plural(d.clientes, 'cliente', 'clientes') +
+                    (d.porCobrar > 0 ? ' · quedó debiendo ' + S.money(d.porCobrar) : '') +
+                  '</span>' +
+                '</span>' +
+                '<span class="dia__monto">' + S.money(d.recaudado) + '</span>' +
+              '</button>';
+            }).join('') + '</div>'
+          : '<div class="tarjeta chico centro">No hubo ventas en esas fechas.</div>');
+
+      $('#hCuerpo').innerHTML = cuerpo;
+      enganchar();
+    }
+
+    function enganchar() {
+      $$('[data-rango]').forEach(function (b) {
+        b.onclick = function () {
+          var r = rangosRapidos().filter(function (x) { return x.id === b.dataset.rango; })[0];
+          rango = (r && r.desde) ? r : null;
+          vista.rangoHistorial = rango;
+          pintar();
+        };
+      });
+
+      // Escribir una fecha a mano desarma el atajo: ya es un rango propio.
+      function manual() {
+        var d = $('#hDesde').value, h = $('#hHasta').value;
+        if (!d && !h) { rango = null; }
+        else { rango = { id: 'manual', desde: d || null, hasta: h || null }; }
+        vista.rangoHistorial = rango;
+        pintar();
+      }
+      $('#hDesde').onchange = manual;
+      $('#hHasta').onchange = manual;
+
+      $$('[data-dia]').forEach(function (b) {
+        b.onclick = function () {
+          vista.fechaResumen = b.dataset.dia;
+          cerrarHoja();
+          window.scrollTo(0, 0);
+          render();
+        };
+      });
+
+      if ($('#hExcel')) $('#hExcel').onclick = function () {
+        descargarCSV(rango, sedeId);
+        cerrarHoja();
+      };
+    }
 
     abrirHoja(
       '<h2>Historial</h2>' +
-      '<p class="sub">' + plural(dias.length, 'día con ventas', 'días con ventas') +
-        (sedeId ? ' · ' + esc(S.nombreSede(sedeId)) : '') + '. Tocá uno para verlo.</p>' +
-
-      '<div class="metricas" style="margin-bottom:16px">' +
-        '<div class="metrica"><div class="rot">Recaudado total</div>' +
-          '<div class="val verde">' + S.money(totalR) + '</div></div>' +
-        '<div class="metrica"><div class="rot">Vendido total</div>' +
-          '<div class="val cyan">' + S.money(totalV) + '</div></div>' +
-      '</div>' +
-
-      '<button class="btn btn--exito btn--bloque" id="hExcel" style="margin-bottom:14px">' +
-        'Bajar todo en Excel</button>' +
-      '<div class="tarjeta">' + dias.map(function (d) {
-        return '<button class="dia" data-dia="' + d.fecha + '">' +
-          '<span class="dia__cuerpo">' +
-            '<span class="item__nombre">' + esc(fechaLarga(d.fecha)) +
-              (d.fecha === hoy ? ' <span class="etiqueta etiqueta--pagado">hoy</span>' : '') +
-            '</span>' +
-            '<span class="item__meta">' + plural(d.clientes, 'cliente', 'clientes') +
-              (d.porCobrar > 0 ? ' · quedó debiendo ' + S.money(d.porCobrar) : '') +
-            '</span>' +
-          '</span>' +
-          '<span class="dia__monto">' + S.money(d.recaudado) + '</span>' +
-        '</button>';
-      }).join('') + '</div>',
-
-      function (h) {
-        $$('[data-dia]', h).forEach(function (b) {
-          b.onclick = function () {
-            vista.fechaResumen = b.dataset.dia;
-            cerrarHoja();
-            window.scrollTo(0, 0);
-            render();
-          };
-        });
-
-        $('#hExcel', h).onclick = function () {
-          descargarCSV(null, sedeId);
-          cerrarHoja();
-        };
-      }
+      '<p class="sub">Elegí el período' +
+        (sedeId ? ' · ' + esc(S.nombreSede(sedeId)) : '') +
+        '. Tocá un día para verlo completo.</p>' +
+      '<div id="hCuerpo"></div>',
+      pintar
     );
   }
 
-  /* Sin fecha exporta el historial completo. Con fecha, solo ese día.
-   * La columna Fecha va siempre: un archivo de varios días sin ella no se
-   * puede ordenar ni filtrar en Excel.
+  /* `cuando` puede ser null (todo), una fecha suelta, o un rango
+   * {desde, hasta}. La columna Fecha va siempre: un archivo de varios días
+   * sin ella no se puede ordenar ni filtrar en Excel.
    */
   function aCSV(filas) {
     return filas.map(function (f) {
@@ -1522,9 +1633,12 @@
     }).join('\r\n');
   }
 
-  function descargarCSV(fecha, sedeId) {
+  function descargarCSV(cuando, sedeId) {
+    var rango = typeof cuando === 'string' ? { desde: cuando, hasta: cuando } : cuando;
+    var unSoloDia = rango && rango.desde && rango.desde === rango.hasta;
+
     var delTurno = function (r) {
-      return (!fecha || r.fecha === fecha) && (!sedeId || r.sede_id === sedeId);
+      return enRango(r.fecha, rango) && (!sedeId || r.sede_id === sedeId);
     };
 
     var porFecha = function (a, b) { return (a.fecha || '').localeCompare(b.fecha || ''); };
@@ -1547,13 +1661,16 @@
     });
 
     // Un resumen por día al final: es lo primero que se mira al abrirlo.
-    if (!fecha) {
+    if (!unSoloDia) {
       filas.push([]);
       filas.push(['RESUMEN POR DÍA']);
       filas.push(['Fecha', 'Clientes', 'Vendido', 'Recaudado', 'Quedó debiendo']);
-      S.historial(sedeId).slice().reverse().forEach(function (d) {
-        filas.push([d.fecha, d.clientes, d.vendido, d.recaudado, d.porCobrar]);
-      });
+      S.historial(sedeId)
+        .filter(function (d) { return enRango(d.fecha, rango); })
+        .reverse()
+        .forEach(function (d) {
+          filas.push([d.fecha, d.clientes, d.vendido, d.recaudado, d.porCobrar]);
+        });
     }
 
     var csv = filas.map(function (f) {
@@ -1564,9 +1681,12 @@
     }).join('\r\n');
 
     var sufijo = sedeId ? '-' + S.nombreSede(sedeId).toLowerCase().replace(/\s+/g, '-') : '';
-    var cuando = fecha || 'historial-completo-' + S.diaNegocio();
-    descargar('nova-ventas-' + cuando + sufijo + '.csv', '﻿' + csv, 'text/csv;charset=utf-8');
-    toast(fecha ? 'Descargado' : 'Historial completo descargado');
+    var nombre = unSoloDia ? rango.desde
+      : (rango && (rango.desde || rango.hasta)
+          ? (rango.desde || 'inicio') + '_a_' + (rango.hasta || S.diaNegocio())
+          : 'historial-completo-' + S.diaNegocio());
+    descargar('nova-ventas-' + nombre + sufijo + '.csv', '﻿' + csv, 'text/csv;charset=utf-8');
+    toast('Descargado · ' + etiquetaRango(rango));
   }
 
   /* Todo el negocio en un archivo: cada tabla en su bloque, separadas por una
