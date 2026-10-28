@@ -180,6 +180,11 @@ Nada. El plan gratis de Supabase (500 MB y 50.000 usuarios activos al mes) y Git
 
 Lo único: si el proyecto de Supabase pasa **una semana entera sin ninguna actividad**, se pausa y hay que reactivarlo con un clic. Usándolo cada noche no pasa.
 
+## Para trabajar sobre el código
+
+[`REFERENCIA.md`](REFERENCIA.md) explica la arquitectura, el modelo de datos, dónde se
+aplican los permisos, las decisiones que más costaron y las trampas conocidas.
+
 ## Estructura
 
 ```
