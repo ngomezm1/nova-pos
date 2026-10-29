@@ -47,6 +47,7 @@ Son tres partes. Calculá una hora la primera vez.
    9. [`09-diagnostico.sql`](supabase/09-diagnostico.sql) — que la app pueda preguntar al servidor cómo la ve
   10. [`10-guardar-sin-leer.sql`](supabase/10-guardar-sin-leer.sql) — que el ayudante pueda guardar sobre el historial sin poder leerlo
   11. [`11-anular-solo-dueno.sql`](supabase/11-anular-solo-dueno.sql) — que solo el dueño pueda anular cuentas
+  12. [`12-deshacer-solo-dueno.sql`](supabase/12-deshacer-solo-dueno.sql) — que tampoco pueda anular pagos ni quitar vasos ya cobrados
 6. Andá a **Authentication** → **Providers** → **Email** y **desactivá** *Confirm email*. Así los usuarios entran sin tener que confirmar el correo.
 7. Andá a **Authentication** → **Users** → **Add user** → *Create new user*.
    - Correo y contraseña **tuyos**. Este primer usuario queda como **dueño** automáticamente.
@@ -118,9 +119,10 @@ No es una pantalla escondida: es el servidor el que decide.
 - **El historial es solo tuyo.** Él ve lo de hoy y las cuentas que sigan abiertas de otros días
   (para poder cobrarlas). Lo de días anteriores ya cerrado no le llega, y lo que bajó cuando
   era "hoy" se borra de su celular al día siguiente.
-- **Anular una cuenta es solo del dueño.** Se lleva las ventas y devuelve los vasos, así que
-  el ayudante que abre una cuenta por error le avisa. Sí puede corregir el pedido quitando
-  vasos con el botón −.
+- **Deshacer una venta cobrada es solo del dueño.** Anular una cuenta, anular un pago o quitar
+  vasos de una cuenta que ya recibió plata. Una vez que hubo dinero de por medio, cualquier
+  cambio pasa por el dueño.
+- El ayudante sí corrige libremente mientras la cuenta no tenga pagos, y siempre puede agregar.
 - Nadie borra físicamente cuentas, ítems ni pagos: se marcan como anulados y queda el rastro.
 - Cuando cierra sesión, los datos del negocio se borran de ese celular.
 - **El dueño puede quitarle el acceso a cualquiera** desde Ajustes → Quién tiene acceso.

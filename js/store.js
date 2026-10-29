@@ -803,6 +803,14 @@
     nuevaCantidad = Math.max(0, Number(nuevaCantidad) || 0);
     if (nuevaCantidad < (it.pagadas || 0)) return false;
 
+    /* Quitar vasos de una cuenta que ya recibió plata es deshacer una venta
+     * cobrada, no corregir un pedido: eso pasa por el dueño. Agregar sí se
+     * puede, que es lo normal cuando el cliente sigue pidiendo.
+     */
+    if (nuevaCantidad < it.cantidad && !esDueno() && pagosDe(it.cuenta_id).length) {
+      return false;
+    }
+
     var delta = nuevaCantidad - it.cantidad;
     var consumoIt = claveConsumo(it);
     if (consumoIt && delta !== 0) {
@@ -891,7 +899,9 @@
     return pago;
   }
 
+  /* Anular un pago borra plata que ya entró: solo el dueño. */
   function anularPago(pagoId) {
+    if (!esDueno()) return false;
     var p = buscar('pagos', pagoId);
     if (!p) return false;
     (p.cubre || []).forEach(function (c) {

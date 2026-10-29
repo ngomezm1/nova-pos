@@ -4,7 +4,7 @@
 (function (global) {
   'use strict';
 
-  NOVA.VERSION = '2.7';
+  NOVA.VERSION = '2.8';
 
   var S = NOVA.store;
   var C = NOVA.cloud;
@@ -625,6 +625,10 @@
 
     if (pagos.length) {
       html += '<div class="titulo-seccion">Pagos recibidos</div><div class="tarjeta">' +
+        (NOVA.sesion.esDueno()
+          ? ''
+          : '<p class="chico" style="margin:0 0 10px">Esta cuenta ya recibió plata. ' +
+            'Si hay algo que corregir, pedíselo al dueño.</p>') +
         pagos.map(function (p) {
           return '<div class="item">' +
             '<div class="item__cuerpo">' +
@@ -634,7 +638,10 @@
                 ((p.cubre && p.cubre.length) ? ' · por ítems' : '') +
                 (p.nota ? ' · ' + esc(p.nota) : '') + '</div>' +
             '</div>' +
-            '<button class="btn btn--chico btn--peligro btn--fantasma" data-anular="' + p.id + '">Anular</button>' +
+            (NOVA.sesion.esDueno()
+              ? '<button class="btn btn--chico btn--peligro btn--fantasma" data-anular="' +
+                p.id + '">Anular</button>'
+              : '') +
           '</div>';
         }).join('') + '</div>';
     }
@@ -703,7 +710,13 @@
     $$('[data-menos]', m).forEach(function (b) {
       b.onclick = function () {
         var i = S.buscar('items', b.dataset.menos);
-        if (!S.cambiarCantidad(i.id, i.cantidad - 1)) toast('Esa unidad ya está pagada');
+        if (S.cambiarCantidad(i.id, i.cantidad - 1)) return;
+
+        toast((i.pagadas || 0) >= i.cantidad
+          ? 'Esa unidad ya está pagada'
+          : (NOVA.sesion.esDueno()
+              ? 'No se pudo quitar'
+              : 'Ya recibió un pago. Pedile al dueño que lo corrija.'));
       };
     });
 
